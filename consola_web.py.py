@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-consola_web.py — CONSOLA WEB INTERACTIVA (BLINDADA PARA STREAMLIT CLOUD / LINUX)
-Conecta el motor financiero y generador de Excels/Word (Script 2) con el integrador
-de Árboles, Croquis, CANVAS y Marco Lógico (Script 3).
+consola_web.py.py — CONSOLA WEB INTERACTIVA (FONDO CLARO FIJO + AGREGAR/QUITAR FILAS)
+- Fuerza el tema visual claro (#F8FAFC) con etiquetas visibles y casillas blancas en cualquier dispositivo.
+- Permite AGREGAR (+) y QUITAR (🗑️) filas dinámicamente en Inversiones, Costos Variables, Costos Fijos y Personal.
+- Conecta los Scripts 2 y 3 en vivo para descargar el ZIP actualizado con Word, PDF y los 3 Excels.
 """
 
 import os
@@ -15,23 +16,22 @@ import tempfile
 import subprocess
 import importlib.util
 
-# Forzar backend sin pantalla para que Matplotlib funcione en cualquier servidor web Linux
 import matplotlib
 matplotlib.use("Agg")
 
 import streamlit as st
-from docx.shared import Inches, Pt
-from docx.enum.text import WD_TAB_ALIGNMENT, WD_TAB_LEADER
+from docx.shared import Inches, Pt, RGBColor
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT, WD_TAB_LEADER
+from docx.enum.table import WD_ALIGN_VERTICAL
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
 
 # ==============================================================================
-# 1. COMPATIBILIDAD TOTAL CON SERVIDORES LINUX EN LA NUBE (SIN TKINTER)
+# 1. COMPATIBILIDAD CON SERVIDORES LINUX EN LA NUBE (SIN TKINTER)
 # ==============================================================================
 
 def _asegurar_tkinter_en_nube():
-    """Emula todos los submódulos de tkinter en servidores Linux para que ningún script falle al importar."""
     try:
         import tkinter  # noqa: F401
         import tkinter.font  # noqa: F401
@@ -74,7 +74,6 @@ def cargar_modulo_por_ruta(nombre_interno, nombre_archivo):
     return mod
 
 
-# Cargamos únicamente el Script 2 (Motor + 3 Excels + Word base) y el Script 3 (Árboles + CANVAS + MML)
 mod2 = cargar_modulo_por_ruta("script2_corrector", "2_corrector_formato_y_excels.py")
 mod3 = cargar_modulo_por_ruta("script3_josue", "3_integrador_arboles_y_pauta_josue.py")
 
@@ -246,10 +245,8 @@ def generar_entrega_completa_en_servidor(cfg_vivo, directorio_destino):
     carpeta_entrega = os.path.join(directorio_destino, apellidos)
     os.makedirs(carpeta_entrega, exist_ok=True)
 
-    # 1. Generar los 3 Excels
     r_exc1, r_exc2, r_exc3 = mod2.exportar_tres_excels_limpios(resultados_vivos, carpeta_entrega)
 
-    # 2. Generar el Word base (Script 2)
     ruta_word = os.path.join(carpeta_entrega, f"{apellidos}.docx")
     mod2.generar_informe_word_limpio(resultados_vivos, ruta_word, generar_pdf=False)
 
@@ -261,11 +258,9 @@ def generar_entrega_completa_en_servidor(cfg_vivo, directorio_destino):
             except Exception:
                 pass
 
-    # 3. Inyectar Árboles, Croquis, CANVAS y Marco Lógico (Script 3) y reparar Índice
     mod3.integrar_trabajo_josue_en_word(ruta_word, carpeta_entrega)
     _reparar_toc_y_ubicar_matriz_en_cuerpo(ruta_word)
 
-    # 4. Actualizar tablas de resumen y sensibilidad con las cifras vivas
     m = resultados_vivos["metricas"]
     esc_pes = calcular_escenario_sensibilidad(cfg_vivo, factor_ingresos=0.85, factor_costos=1.00)
     esc_cos = calcular_escenario_sensibilidad(cfg_vivo, factor_ingresos=1.00, factor_costos=1.10)
@@ -293,7 +288,6 @@ def generar_entrega_completa_en_servidor(cfg_vivo, directorio_destino):
 
     doc_final.save(ruta_word)
 
-    # 5. Exportar PDF (en Windows usa Word; en Linux/Cloud usa LibreOffice)
     ruta_pdf, ruta_zip, pdf_ok = mod3.actualizar_pdf_y_zip_final(ruta_word)
     if not pdf_ok and shutil.which("libreoffice"):
         try:
@@ -318,29 +312,88 @@ def generar_entrega_completa_en_servidor(cfg_vivo, directorio_destino):
 
 
 # ==============================================================================
-# 3. INTERFAZ VISUAL EN EL NAVEGADOR (3 COLUMNAS ALINEADAS IGUAL A TU CONSOLA)
+# 3. INTERFAZ VISUAL EN MODO CLARO FIJO + LISTAS DINÁMICAS (+ AGREGAR / 🗑️ QUITAR)
 # ==============================================================================
 
 st.set_page_config(page_title="Consola Interactiva ULagos - Cartón Vivo Osorno", layout="wide")
 
+# CSS que fuerza Modo Claro (#F8FAFC) y casillas blancas con letras negras aunque el navegador esté en Modo Oscuro
 st.markdown(
     """
     <style>
-    .block-container { padding-top: 1.2rem; padding-bottom: 2rem; max-width: 1220px; }
+    .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
+        background-color: #F8FAFC !important;
+        color: #0F172A !important;
+    }
+    .block-container {
+        padding-top: 1.2rem !important;
+        padding-bottom: 2.5rem !important;
+        max-width: 1240px !important;
+    }
     .sec-header {
-        background-color: #DBEAFE;
-        color: #1E3A8A;
-        padding: 7px 14px;
+        background-color: #DBEAFE !important;
+        color: #1E3A8A !important;
+        padding: 8px 14px;
         font-weight: 700;
         font-size: 14px;
         border-radius: 5px;
-        margin-top: 14px;
-        margin-bottom: 8px;
+        margin-top: 16px;
+        margin-bottom: 10px;
         border-left: 4px solid #1D4ED8;
     }
-    .lbl-col { font-weight: 700; color: #0F172A; font-size: 13.5px; padding-top: 6px; }
-    .exp-col { color: #475569; font-size: 12.5px; padding-top: 6px; line-height: 1.35; }
-    div[data-testid="stTextInput"] { margin-bottom: -10px; }
+    .sub-header {
+        background-color: #E2E8F0 !important;
+        color: #1E293B !important;
+        padding: 5px 12px;
+        font-weight: 700;
+        font-size: 13px;
+        border-radius: 4px;
+        margin-top: 10px;
+        margin-bottom: 6px;
+    }
+    .lbl-col {
+        font-weight: 700 !important;
+        color: #0F172A !important;
+        font-size: 13.5px;
+        padding-top: 7px;
+    }
+    .exp-col {
+        color: #334155 !important;
+        font-size: 12.5px;
+        padding-top: 7px;
+        line-height: 1.35;
+    }
+    /* Casillas de texto y selectores siempre blancos con texto negro */
+    div[data-baseweb="input"] > div,
+    div[data-baseweb="select"] > div {
+        background-color: #FFFFFF !important;
+        color: #0F172A !important;
+        border: 1px solid #94A3B8 !important;
+        border-radius: 4px !important;
+    }
+    input {
+        color: #0F172A !important;
+        -webkit-text-fill-color: #0F172A !important;
+        background-color: #FFFFFF !important;
+        font-weight: 600 !important;
+    }
+    div[data-baseweb="select"] span {
+        color: #0F172A !important;
+    }
+    div[data-testid="stTextInput"], div[data-testid="stSelectbox"] {
+        margin-bottom: -8px;
+    }
+    button[kind="secondary"] {
+        background-color: #FFFFFF !important;
+        color: #0F172A !important;
+        border: 1px solid #94A3B8 !important;
+        font-weight: 700 !important;
+    }
+    button[kind="secondary"]:hover {
+        background-color: #EFF6FF !important;
+        border-color: #1D4ED8 !important;
+        color: #1D4ED8 !important;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -356,17 +409,36 @@ if "cfg" not in st.session_state:
 
 cfg = st.session_state.cfg
 
-col_p1, col_p2, col_p3 = st.columns([1.2, 1.2, 1.6])
+# Botones rápidos de Presets arriba
+col_p1, col_p2, col_p3 = st.columns([1.2, 1.2, 1.2])
 if col_p1.button("🔶 Cargar Precios Sombra SNI 2026 (TSD 5,5%)", use_container_width=True):
     cfg["TASA_DESCUENTO_SOCIAL"] = 0.055
     cfg["FC_MOC"], cfg["FC_MOSC"], cfg["FC_MONC"], cfg["FC_DIVISA"] = 0.97, 0.95, 0.91, 1.00
     cfg["OTROS_BEN_SOC_ANUAL"] = 0.0
+    for k in list(st.session_state.keys()):
+        if k.startswith("in_"):
+            del st.session_state[k]
     st.rerun()
 
 if col_p2.button("🔷 Cargar Caso Base Original (TSD 6,0%)", use_container_width=True):
     cfg["TASA_DESCUENTO_SOCIAL"] = 0.06
     cfg["FC_MOC"], cfg["FC_MOSC"], cfg["FC_MONC"], cfg["FC_DIVISA"] = 1.00, 0.85, 0.68, 1.01
     cfg["OTROS_BEN_SOC_ANUAL"] = 2500000.0
+    for k in list(st.session_state.keys()):
+        if k.startswith("in_"):
+            del st.session_state[k]
+    st.rerun()
+
+if col_p3.button("♻️ Restaurar Todas las Listas por Defecto", use_container_width=True):
+    c_reset = copy.deepcopy(mod2.DEFAULTS)
+    c_reset["INVERSIONES_LISTA"] = copy.deepcopy(mod2.INVERSIONES_DEFAULT)
+    c_reset["COSTOS_VAR_LISTA"] = copy.deepcopy(mod2.COSTOS_VAR_DEFAULT)
+    c_reset["COSTOS_FIJOS_LISTA"] = copy.deepcopy(mod2.COSTOS_FIJOS_DEFAULT)
+    c_reset["PERSONAL_LISTA"] = copy.deepcopy(mod2.PERSONAL_DEFAULT)
+    st.session_state.cfg = c_reset
+    for k in list(st.session_state.keys()):
+        if k.startswith("in_") or k.startswith("dyn_"):
+            del st.session_state[k]
     st.rerun()
 
 banner_placeholder = st.empty()
@@ -390,6 +462,20 @@ def fila_3_columnas(clave_unica, etiqueta, valor_actual, explicacion, es_texto=F
         return int(val_num) if es_entero else val_num
     except Exception:
         return valor_actual
+
+
+def _parse_float(txt, default_val):
+    try:
+        return float(str(txt).strip().replace(",", "."))
+    except Exception:
+        return default_val
+
+
+def _parse_int(txt, default_val):
+    try:
+        return max(1, int(float(str(txt).strip().replace(",", "."))))
+    except Exception:
+        return default_val
 
 
 # SECCIÓN 1
@@ -431,53 +517,176 @@ st.markdown("<div class='sec-header'>4. BENEFICIOS SOCIALES EXTERNOS (LIBERACIÓ
 cfg["AHORRO_MUNI_TON"] = fila_3_columnas("AHM", "Ahorro Municipal por Tonelada Desviada ($):", cfg["AHORRO_MUNI_TON"], "(Dinero que ahorra la Municipalidad de Osorno en camiones y Vertedero de Curaco por cada tonelada reciclada: ej. 48000)")
 cfg["OTROS_BEN_SOC_ANUAL"] = fila_3_columnas("OTB", "Otros Beneficios Sociales Anuales ($):", cfg["OTROS_BEN_SOC_ANUAL"], "(Valor anual en pesos de beneficios extra para la comuna: pon 2500000 o 0 si aplicas criterio conservador SNI 2026)")
 
-# SECCIÓN 5
-st.markdown("<div class='sec-header'>5. INVERSIONES EN ACTIVOS FIJOS CON IVA (PUNTO 5.b)</div>", unsafe_allow_html=True)
-etiquetas_inv = [
-    ("INV0", "Troqueladora Industrial ($ con IVA):", "(Costo de compra en Año 0: ej. 8500000. Es máquina importada, dura 10 años y al final recupera el 10% residual)"),
-    ("INV1", "Guillotina, Mesones y Moldes ($ con IVA):", "(Costo de compra en Año 0: ej. 3500000. Es nacional y tiene vida útil de 5 años, se renueva en el Año 5)"),
-    ("INV2", "Equipo Serigrafía y Secado ($ con IVA):", "(Costo de compra en Año 0: ej. 2000000. Es importado, vida útil de 5 años con renovación en el Año 5)"),
-    ("INV3", "Habilitación de Galpón y Permisos ($ con IVA):", "(Gasto inicial en Año 0 en adecuar el taller en Ovejería, electricidad y permisos SEREMI: ej. 2000000)"),
-]
-for idx, (k_inv, lbl_i, exp_i) in enumerate(etiquetas_inv):
-    cfg["INVERSIONES_LISTA"][idx]["monto_bruto"] = fila_3_columnas(
-        k_inv, lbl_i, cfg["INVERSIONES_LISTA"][idx]["monto_bruto"], exp_i
-    )
+# ==============================================================================
+# SECCIÓN 5: INVERSIONES EN ACTIVOS FIJOS (CON BOTONES + AGREGAR Y 🗑️ QUITAR)
+# ==============================================================================
+st.markdown("<div class='sec-header'>5. INVERSIONES EN ACTIVOS FIJOS CON IVA (PUNTO 5.b — PUEDES AGREGAR O QUITAR ÍTEMS)</div>", unsafe_allow_html=True)
 
-# SECCIÓN 6
-st.markdown("<div class='sec-header'>6. COSTOS OPERATIVOS VARIABLES Y FIJOS (PUNTO 5.c)</div>", unsafe_allow_html=True)
-etiquetas_cv = [
-    ("CV0", "Costo Unitario Tintas y Adhesivos ($ c/IVA):", "(Gasto variable en tintas ecológicas al agua EN-71, pegamento y laca por cada juego fabricado: ej. 1800)"),
-    ("CV1", "Costo Unitario Empaque y Etiqueta ($ c/IVA):", "(Gasto variable en caja protectora, instructivo y etiquetado por cada juego fabricado: ej. 600)"),
-    ("CV2", "Costo Flete Furgón por Tonelada ($ c/IVA):", "(Tarifa pagada al furgón contratado por cada tonelada retirada en calle Eleuterio Ramírez: ej. 30000)"),
-]
-for idx, (k_cv, lbl_cv, exp_cv) in enumerate(etiquetas_cv):
-    cfg["COSTOS_VAR_LISTA"][idx]["costo"] = fila_3_columnas(
-        k_cv, lbl_cv, cfg["COSTOS_VAR_LISTA"][idx]["costo"], exp_cv
-    )
+h_inv1, h_inv2, h_inv3, h_inv4, h_inv5 = st.columns([2.6, 1.3, 0.9, 1.1, 0.5])
+h_inv1.markdown("<div class='lbl-col'>Nombre de la Máquina / Inversión</div>", unsafe_allow_html=True)
+h_inv2.markdown("<div class='lbl-col'>Monto c/IVA ($)</div>", unsafe_allow_html=True)
+h_inv3.markdown("<div class='lbl-col'>Vida Útil (Años)</div>", unsafe_allow_html=True)
+h_inv4.markdown("<div class='lbl-col'>Origen</div>", unsafe_allow_html=True)
+h_inv5.markdown("<div class='lbl-col'>Quitar</div>", unsafe_allow_html=True)
 
-etiquetas_cf = [
-    ("CF0", "Arriendo Mensual Galpón Ovejería ($ Exento):", "(Arriendo mensual del galpón de 140 m2 en Sector Industrial Ovejería: ej. 450000 pesos al mes)"),
-    ("CF1", "Luz (Saesa), Agua (Suralis) e Internet ($/mes):", "(Gasto fijo mensual en electricidad trifásica Saesa, agua potable Suralis e internet: ej. 180000 al mes)"),
-    ("CF2", "Contador, Patente y Seguros ($/mes c/IVA):", "(Gasto fijo mensual en contabilidad Pro Pyme, patente municipal en Osorno y seguros: ej. 150000 al mes)"),
-]
-for idx, (k_cf, lbl_cf, exp_cf) in enumerate(etiquetas_cf):
-    cfg["COSTOS_FIJOS_LISTA"][idx]["mensual"] = fila_3_columnas(
-        k_cf, lbl_cf, cfg["COSTOS_FIJOS_LISTA"][idx]["mensual"], exp_cf
+idx_borrar_inv = None
+for idx, inv in enumerate(cfg["INVERSIONES_LISTA"]):
+    c1, c2, c3, c4, c5 = st.columns([2.6, 1.3, 0.9, 1.1, 0.5])
+    inv["item"] = c1.text_input("Ítem", value=str(inv["item"]), key=f"dyn_inv_nom_{idx}_{len(cfg['INVERSIONES_LISTA'])}", label_visibility="collapsed")
+    m_txt = c2.text_input("Monto", value=str(inv["monto_bruto"]), key=f"dyn_inv_mon_{idx}_{len(cfg['INVERSIONES_LISTA'])}", label_visibility="collapsed")
+    inv["monto_bruto"] = _parse_float(m_txt, inv["monto_bruto"])
+    v_txt = c3.text_input("Vida", value=str(inv["vida_util_economica"]), key=f"dyn_inv_vid_{idx}_{len(cfg['INVERSIONES_LISTA'])}", label_visibility="collapsed")
+    vida_int = _parse_int(v_txt, inv["vida_util_economica"])
+    inv["vida_util_economica"] = vida_int
+    inv["vida_util_contable"] = min(vida_int, 10)
+    inv["origen"] = c4.selectbox(
+        "Origen", options=["Nacional", "Importado"],
+        index=0 if str(inv.get("origen", "Nacional")).lower() == "nacional" else 1,
+        key=f"dyn_inv_ori_{idx}_{len(cfg['INVERSIONES_LISTA'])}", label_visibility="collapsed"
     )
+    if c5.button("🗑️", key=f"del_inv_{idx}", help="Eliminar esta inversión") and len(cfg["INVERSIONES_LISTA"]) > 1:
+        idx_borrar_inv = idx
 
-# SECCIÓN 7
-st.markdown("<div class='sec-header'>7. DOTACIÓN DE PERSONAL Y SUELDOS MENSUALES (PUNTO 4.3)</div>", unsafe_allow_html=True)
-etiquetas_pers = [
-    ("PE0", "Sueldo Bruto Jefe de Planta (1 persona - MOC):", "(Sueldo mensual bruto del Jefe de Planta y Ventas [1 trabajador MOC]: ej. 950000 pesos/mes)"),
-    ("PE1", "Sueldo Bruto Operador Técnico (2 personas - MOSC):", "(Sueldo mensual bruto unitario de cada Operador de Corte y Pintura [son 2 trabajadores MOSC]: ej. 600000 c/u)"),
-    ("PE2", "Sueldo Bruto Operario Recolección (2 pers. - MONC):", "(Sueldo mensual bruto unitario de cada Operario de Recolección y Armado [son 2 trabajadores MONC]: ej. 520000 c/u)"),
-]
-for idx, (k_pe, lbl_pe, exp_pe) in enumerate(etiquetas_pers):
-    cfg["PERSONAL_LISTA"][idx]["sueldo_bruto_mensual"] = fila_3_columnas(
-        k_pe, lbl_pe, cfg["PERSONAL_LISTA"][idx]["sueldo_bruto_mensual"], exp_pe
+if idx_borrar_inv is not None:
+    cfg["INVERSIONES_LISTA"].pop(idx_borrar_inv)
+    st.rerun()
+
+if st.button("➕ Agregar Nueva Máquina / Inversión en Activo Fijo"):
+    cfg["INVERSIONES_LISTA"].append({
+        "item": f"Nuevo Equipo o Acondicionamiento #{len(cfg['INVERSIONES_LISTA']) + 1}",
+        "monto_bruto": 1000000,
+        "vida_util_contable": 5,
+        "vida_util_economica": 5,
+        "valor_residual_pct": 0.05,
+        "origen": "Nacional",
+    })
+    st.rerun()
+
+# ==============================================================================
+# SECCIÓN 6: COSTOS OPERATIVOS VARIABLES Y FIJOS (CON + AGREGAR Y 🗑️ QUITAR)
+# ==============================================================================
+st.markdown("<div class='sec-header'>6. COSTOS OPERATIVOS VARIABLES Y FIJOS (PUNTO 5.c — PUEDES AGREGAR O QUITAR ÍTEMS)</div>", unsafe_allow_html=True)
+
+st.markdown("<div class='sub-header'>6.A Costos Variables (Por Unidad Fabricada o Por Tonelada Recolectada)</div>", unsafe_allow_html=True)
+h_cv1, h_cv2, h_cv3, h_cv4, h_cv5 = st.columns([2.6, 1.3, 1.2, 0.8, 0.5])
+h_cv1.markdown("<div class='lbl-col'>Descripción del Costo Variable</div>", unsafe_allow_html=True)
+h_cv2.markdown("<div class='lbl-col'>Costo c/IVA ($)</div>", unsafe_allow_html=True)
+h_cv3.markdown("<div class='lbl-col'>Base de Cálculo</div>", unsafe_allow_html=True)
+h_cv4.markdown("<div class='lbl-col'>Origen</div>", unsafe_allow_html=True)
+h_cv5.markdown("<div class='lbl-col'>Quitar</div>", unsafe_allow_html=True)
+
+idx_borrar_cv = None
+for idx, cv in enumerate(cfg["COSTOS_VAR_LISTA"]):
+    c1, c2, c3, c4, c5 = st.columns([2.6, 1.3, 1.2, 0.8, 0.5])
+    cv["item"] = c1.text_input("Ítem CV", value=str(cv["item"]), key=f"dyn_cv_nom_{idx}_{len(cfg['COSTOS_VAR_LISTA'])}", label_visibility="collapsed")
+    c_txt = c2.text_input("Monto CV", value=str(cv["costo"]), key=f"dyn_cv_mon_{idx}_{len(cfg['COSTOS_VAR_LISTA'])}", label_visibility="collapsed")
+    cv["costo"] = _parse_float(c_txt, cv["costo"])
+    cv["base"] = c3.selectbox(
+        "Base", options=["Por Unidad", "Por Tonelada"],
+        index=0 if cv.get("base", "Por Unidad") == "Por Unidad" else 1,
+        key=f"dyn_cv_bas_{idx}_{len(cfg['COSTOS_VAR_LISTA'])}", label_visibility="collapsed"
     )
+    cv["origen"] = c4.selectbox(
+        "Origen CV", options=["Nacional", "Importado"],
+        index=0 if str(cv.get("origen", "Nacional")).lower() == "nacional" else 1,
+        key=f"dyn_cv_ori_{idx}_{len(cfg['COSTOS_VAR_LISTA'])}", label_visibility="collapsed"
+    )
+    if c5.button("🗑️", key=f"del_cv_{idx}", help="Eliminar este costo variable") and len(cfg["COSTOS_VAR_LISTA"]) > 1:
+        idx_borrar_cv = idx
 
+if idx_borrar_cv is not None:
+    cfg["COSTOS_VAR_LISTA"].pop(idx_borrar_cv)
+    st.rerun()
+
+if st.button("➕ Agregar Nuevo Costo Variable"):
+    cfg["COSTOS_VAR_LISTA"].append({
+        "item": f"Nuevo Insumo o Costo Variable #{len(cfg['COSTOS_VAR_LISTA']) + 1}",
+        "costo": 500,
+        "base": "Por Unidad",
+        "origen": "Nacional",
+    })
+    st.rerun()
+
+st.markdown("<div class='sub-header'>6.B Gastos Fijos Mensuales del Taller en Ovejería</div>", unsafe_allow_html=True)
+h_cf1, h_cf2, h_cf3, h_cf4 = st.columns([3.2, 1.5, 1.2, 0.5])
+h_cf1.markdown("<div class='lbl-col'>Descripción del Gasto Fijo Mensual</div>", unsafe_allow_html=True)
+h_cf2.markdown("<div class='lbl-col'>Valor Mensual ($)</div>", unsafe_allow_html=True)
+h_cf3.markdown("<div class='lbl-col'>Régimen IVA</div>", unsafe_allow_html=True)
+h_cf4.markdown("<div class='lbl-col'>Quitar</div>", unsafe_allow_html=True)
+
+idx_borrar_cf = None
+for idx, cf in enumerate(cfg["COSTOS_FIJOS_LISTA"]):
+    c1, c2, c3, c4 = st.columns([3.2, 1.5, 1.2, 0.5])
+    cf["item"] = c1.text_input("Ítem CF", value=str(cf["item"]), key=f"dyn_cf_nom_{idx}_{len(cfg['COSTOS_FIJOS_LISTA'])}", label_visibility="collapsed")
+    cf_txt = c2.text_input("Mensual CF", value=str(cf["mensual"]), key=f"dyn_cf_mon_{idx}_{len(cfg['COSTOS_FIJOS_LISTA'])}", label_visibility="collapsed")
+    cf["mensual"] = _parse_float(cf_txt, cf["mensual"])
+    cf["afecto_iva"] = c3.selectbox(
+        "IVA CF", options=["Exento", "Con IVA"],
+        index=0 if cf.get("afecto_iva", "Exento") == "Exento" else 1,
+        key=f"dyn_cf_iva_{idx}_{len(cfg['COSTOS_FIJOS_LISTA'])}", label_visibility="collapsed"
+    )
+    if c4.button("🗑️", key=f"del_cf_{idx}", help="Eliminar este gasto fijo") and len(cfg["COSTOS_FIJOS_LISTA"]) > 1:
+        idx_borrar_cf = idx
+
+if idx_borrar_cf is not None:
+    cfg["COSTOS_FIJOS_LISTA"].pop(idx_borrar_cf)
+    st.rerun()
+
+if st.button("➕ Agregar Nuevo Gasto Fijo Mensual"):
+    cfg["COSTOS_FIJOS_LISTA"].append({
+        "item": f"Nuevo Gasto Fijo Mensual #{len(cfg['COSTOS_FIJOS_LISTA']) + 1}",
+        "mensual": 100000,
+        "afecto_iva": "Con IVA",
+    })
+    st.rerun()
+
+# ==============================================================================
+# SECCIÓN 7: DOTACIÓN DE PERSONAL Y SUELDOS (CON + AGREGAR Y 🗑️ QUITAR)
+# ==============================================================================
+st.markdown("<div class='sec-header'>7. DOTACIÓN DE PERSONAL Y SUELDOS MENSUALES (PUNTO 4.3 — PUEDES AGREGAR O QUITAR CARGOS)</div>", unsafe_allow_html=True)
+
+h_p1, h_p2, h_p3, h_p4, h_p5, h_p6 = st.columns([2.2, 0.7, 0.9, 1.2, 1.9, 0.5])
+h_p1.markdown("<div class='lbl-col'>Cargo / Puesto en Planta</div>", unsafe_allow_html=True)
+h_p2.markdown("<div class='lbl-col'>Cant.</div>", unsafe_allow_html=True)
+h_p3.markdown("<div class='lbl-col'>Calif. SNI</div>", unsafe_allow_html=True)
+h_p4.markdown("<div class='lbl-col'>Sueldo Mensual ($)</div>", unsafe_allow_html=True)
+h_p5.markdown("<div class='lbl-col'>Tareas Principales</div>", unsafe_allow_html=True)
+h_p6.markdown("<div class='lbl-col'>Quitar</div>", unsafe_allow_html=True)
+
+idx_borrar_pers = None
+opciones_sni = ["MOC", "MOSC", "MONC"]
+for idx, p_item in enumerate(cfg["PERSONAL_LISTA"]):
+    c1, c2, c3, c4, c5, c6 = st.columns([2.2, 0.7, 0.9, 1.2, 1.9, 0.5])
+    p_item["cargo"] = c1.text_input("Cargo", value=str(p_item["cargo"]), key=f"dyn_pe_car_{idx}_{len(cfg['PERSONAL_LISTA'])}", label_visibility="collapsed")
+    cant_txt = c2.text_input("Cant", value=str(p_item["cantidad"]), key=f"dyn_pe_can_{idx}_{len(cfg['PERSONAL_LISTA'])}", label_visibility="collapsed")
+    p_item["cantidad"] = _parse_int(cant_txt, p_item["cantidad"])
+    cal_actual = p_item.get("calificacion", "MONC")
+    p_item["calificacion"] = c3.selectbox(
+        "SNI", options=opciones_sni,
+        index=opciones_sni.index(cal_actual) if cal_actual in opciones_sni else 2,
+        key=f"dyn_pe_sni_{idx}_{len(cfg['PERSONAL_LISTA'])}", label_visibility="collapsed"
+    )
+    sue_txt = c4.text_input("Sueldo", value=str(p_item["sueldo_bruto_mensual"]), key=f"dyn_pe_sue_{idx}_{len(cfg['PERSONAL_LISTA'])}", label_visibility="collapsed")
+    p_item["sueldo_bruto_mensual"] = _parse_float(sue_txt, p_item["sueldo_bruto_mensual"])
+    p_item["competencias"] = c5.text_input("Tareas", value=str(p_item.get("competencias", "Operación en planta")), key=f"dyn_pe_com_{idx}_{len(cfg['PERSONAL_LISTA'])}", label_visibility="collapsed")
+    if c6.button("🗑️", key=f"del_pe_{idx}", help="Eliminar este cargo") and len(cfg["PERSONAL_LISTA"]) > 1:
+        idx_borrar_pers = idx
+
+if idx_borrar_pers is not None:
+    cfg["PERSONAL_LISTA"].pop(idx_borrar_pers)
+    st.rerun()
+
+if st.button("➕ Agregar Nuevo Cargo / Trabajador a la Planta"):
+    cfg["PERSONAL_LISTA"].append({
+        "cargo": f"Nuevo Operario / Cargo #{len(cfg['PERSONAL_LISTA']) + 1}",
+        "cantidad": 1,
+        "sueldo_bruto_mensual": 550000,
+        "calificacion": "MONC",
+        "competencias": "Apoyo en producción, logística y control de calidad en Ovejería",
+    })
+    st.rerun()
+
+# Recalcular motor en vivo con las casillas y listas actuales
 res_vivo = mod2.ejecutar_motor_financiero(cfg)
 m = res_vivo["metricas"]
 tp = cfg["TASA_DESCUENTO_PRIVADA"] * 100
@@ -507,7 +716,7 @@ if b_izq.button("🔄 RECALCULAR VAN / TIR EN VIVO", use_container_width=True):
     st.toast("VAN y TIR recalculados en el panel superior.", icon="✅")
 
 if b_der.button("🚀 GENERAR ENTREGA COMPLETA (WORD + PDF + 3 EXCELS EN .ZIP)", type="primary", use_container_width=True):
-    with st.spinner("Ejecutando Scripts 2 + 3, reparando Índice y empaquetando ZIP..."):
+    with st.spinner("Ejecutando Scripts 2 + 3 con tus ítems personalizados y empaquetando ZIP..."):
         dir_temp = tempfile.mkdtemp()
         info = generar_entrega_completa_en_servidor(cfg, dir_temp)
         with open(info["ruta_zip"], "rb") as fz:

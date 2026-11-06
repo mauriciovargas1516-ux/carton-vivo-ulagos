@@ -1,12 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-consola_web.py — CONSOLA WEB INTERACTIVA (3 COLUMNAS ALINEADAS + DESCARGA DE ZIP EN VIVO)
-Replica exactamente el 'PANEL INTERACTIVO DE SUPUESTOS Y SIMULACIÓN EN VIVO' en el navegador,
-conectando los Scripts 1 + 2 + 3 sin necesidad de crear ni descargar archivos .exe.
-
-Cómo abrirla en tu PC:
-    pip install streamlit
-    streamlit run consola_web.py
+consola_web.py — CONSOLA WEB INTERACTIVA (BLINDADA PARA STREAMLIT CLOUD / LINUX)
+Conecta el motor financiero y generador de Excels/Word (Script 2) con el integrador
+de Árboles, Croquis, CANVAS y Marco Lógico (Script 3).
 """
 
 import os
@@ -19,7 +15,7 @@ import tempfile
 import subprocess
 import importlib.util
 
-# Forzar backend sin pantalla para que Matplotlib funcione en cualquier servidor web
+# Forzar backend sin pantalla para que Matplotlib funcione en cualquier servidor web Linux
 import matplotlib
 matplotlib.use("Agg")
 
@@ -31,13 +27,14 @@ from docx.oxml.ns import qn
 
 
 # ==============================================================================
-# 1. COMPATIBILIDAD CON SERVIDORES EN LA NUBE (SI EL SERVIDOR NO TIENE TKINTER)
+# 1. COMPATIBILIDAD TOTAL CON SERVIDORES LINUX EN LA NUBE (SIN TKINTER)
 # ==============================================================================
 
 def _asegurar_tkinter_en_nube():
-    """Si se aloja en un servidor Linux sin entorno gráfico, emula tkinter para que los scripts 1 y 3 carguen sin error."""
+    """Emula todos los submódulos de tkinter en servidores Linux para que ningún script falle al importar."""
     try:
         import tkinter  # noqa: F401
+        import tkinter.font  # noqa: F401
     except ImportError:
         tk_mock = types.ModuleType("tkinter")
         tk_mock.Tk = object
@@ -52,10 +49,14 @@ def _asegurar_tkinter_en_nube():
         tk_mock.ttk = types.ModuleType("tkinter.ttk")
         tk_mock.messagebox = types.ModuleType("tkinter.messagebox")
         tk_mock.filedialog = types.ModuleType("tkinter.filedialog")
+        tk_mock.font = types.ModuleType("tkinter.font")
+        tk_mock.constants = types.ModuleType("tkinter.constants")
         sys.modules["tkinter"] = tk_mock
         sys.modules["tkinter.ttk"] = tk_mock.ttk
         sys.modules["tkinter.messagebox"] = tk_mock.messagebox
         sys.modules["tkinter.filedialog"] = tk_mock.filedialog
+        sys.modules["tkinter.font"] = tk_mock.font
+        sys.modules["tkinter.constants"] = tk_mock.constants
 
 
 _asegurar_tkinter_en_nube()
@@ -73,13 +74,13 @@ def cargar_modulo_por_ruta(nombre_interno, nombre_archivo):
     return mod
 
 
-mod1 = cargar_modulo_por_ruta("script1_simulador", "1_simulador_interactivo_cartonvivo.py")
+# Cargamos únicamente el Script 2 (Motor + 3 Excels + Word base) y el Script 3 (Árboles + CANVAS + MML)
 mod2 = cargar_modulo_por_ruta("script2_corrector", "2_corrector_formato_y_excels.py")
 mod3 = cargar_modulo_por_ruta("script3_josue", "3_integrador_arboles_y_pauta_josue.py")
 
 
 # ==============================================================================
-# 2. REPARADOR DEL ÍNDICE (PÁGINA 2) Y PIPELINE UNIFICADO (SCRIPTS 1 + 2 + 3)
+# 2. REPARADOR DEL ÍNDICE (PÁGINA 2) Y PIPELINE UNIFICADO (SCRIPTS 2 + 3)
 # ==============================================================================
 
 def _es_linea_toc(p):
@@ -292,7 +293,7 @@ def generar_entrega_completa_en_servidor(cfg_vivo, directorio_destino):
 
     doc_final.save(ruta_word)
 
-    # 5. Exportar PDF (en Windows usa Word; en Linux/Cloud usa LibreOffice si está instalado)
+    # 5. Exportar PDF (en Windows usa Word; en Linux/Cloud usa LibreOffice)
     ruta_pdf, ruta_zip, pdf_ok = mod3.actualizar_pdf_y_zip_final(ruta_word)
     if not pdf_ok and shutil.which("libreoffice"):
         try:
@@ -355,7 +356,6 @@ if "cfg" not in st.session_state:
 
 cfg = st.session_state.cfg
 
-# Botones rápidos de Presets arriba
 col_p1, col_p2, col_p3 = st.columns([1.2, 1.2, 1.6])
 if col_p1.button("🔶 Cargar Precios Sombra SNI 2026 (TSD 5,5%)", use_container_width=True):
     cfg["TASA_DESCUENTO_SOCIAL"] = 0.055
@@ -369,7 +369,6 @@ if col_p2.button("🔷 Cargar Caso Base Original (TSD 6,0%)", use_container_widt
     cfg["OTROS_BEN_SOC_ANUAL"] = 2500000.0
     st.rerun()
 
-# Contenedor superior para el Banner Oscuro (se actualiza tras leer todas las casillas)
 banner_placeholder = st.empty()
 
 
@@ -479,7 +478,6 @@ for idx, (k_pe, lbl_pe, exp_pe) in enumerate(etiquetas_pers):
         k_pe, lbl_pe, cfg["PERSONAL_LISTA"][idx]["sueldo_bruto_mensual"], exp_pe
     )
 
-# Recalcular motor en vivo con las casillas actuales y pintar el Banner Oscuro arriba
 res_vivo = mod2.ejecutar_motor_financiero(cfg)
 m = res_vivo["metricas"]
 tp = cfg["TASA_DESCUENTO_PRIVADA"] * 100
@@ -504,13 +502,12 @@ banner_placeholder.markdown(
 
 st.divider()
 
-# Botones inferiores de acción (Igual al diseño de tu consola)
 b_izq, b_der = st.columns(2)
 if b_izq.button("🔄 RECALCULAR VAN / TIR EN VIVO", use_container_width=True):
     st.toast("VAN y TIR recalculados en el panel superior.", icon="✅")
 
 if b_der.button("🚀 GENERAR ENTREGA COMPLETA (WORD + PDF + 3 EXCELS EN .ZIP)", type="primary", use_container_width=True):
-    with st.spinner("Ejecutando Scripts 1 + 2 + 3, reparando Índice y empaquetando ZIP..."):
+    with st.spinner("Ejecutando Scripts 2 + 3, reparando Índice y empaquetando ZIP..."):
         dir_temp = tempfile.mkdtemp()
         info = generar_entrega_completa_en_servidor(cfg, dir_temp)
         with open(info["ruta_zip"], "rb") as fz:

@@ -1,35 +1,72 @@
 # -*- coding: utf-8 -*-
 """
-0_consola_maestra_total.py — PANEL INTERACTIVO DE SUPUESTOS Y SIMULACIÓN EN VIVO (CORREGIDO)
-Diseño vertical alineado en 3 columnas (Etiqueta | Valor Editable | Explicación Guía)
-que conecta automáticamente tus 3 scripts:
-  1) 1_simulador_interactivo_cartonvivo.py
-  2) 2_corrector_formato_y_excels.py
-  3) 3_integrador_arboles_y_pauta_josue.py
+consola_web.py — CONSOLA WEB INTERACTIVA (FONDO CLARO FIJO + AGREGAR/QUITAR FILAS)
+- Fuerza el tema visual claro (#F8FAFC) con etiquetas visibles y casillas blancas en cualquier dispositivo.
+- Permite AGREGAR (+) y QUITAR (🗑️) filas dinámicamente en Inversiones, Costos Variables, Costos Fijos y Personal.
+- Conecta los Scripts 2 y 3 en vivo para descargar el ZIP actualizado con Word, PDF y los 3 Excels.
 """
 
 import os
 import sys
+import types
 import copy
+import shutil
+import zipfile
+import tempfile
+import subprocess
 import importlib.util
-import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
 
-from docx.shared import Inches, Pt
+import matplotlib
+matplotlib.use("Agg")
+
+import streamlit as st
+from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT, WD_TAB_LEADER
+from docx.enum.table import WD_ALIGN_VERTICAL
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
 
 # ==============================================================================
-# 1. CARGA DINÁMICA DE LOS 3 SCRIPTS EN MEMORIA
+# 1. COMPATIBILIDAD CON SERVIDORES LINUX EN LA NUBE (SIN TKINTER)
 # ==============================================================================
+
+def _asegurar_tkinter_en_nube():
+    try:
+        import tkinter  # noqa: F401
+        import tkinter.font  # noqa: F401
+    except ImportError:
+        tk_mock = types.ModuleType("tkinter")
+        tk_mock.Tk = object
+        tk_mock.Toplevel = object
+        tk_mock.Frame = object
+        tk_mock.Label = object
+        tk_mock.Button = object
+        tk_mock.Canvas = object
+        tk_mock.StringVar = lambda *a, **k: None
+        tk_mock.DoubleVar = lambda *a, **k: None
+        tk_mock.IntVar = lambda *a, **k: None
+        tk_mock.ttk = types.ModuleType("tkinter.ttk")
+        tk_mock.messagebox = types.ModuleType("tkinter.messagebox")
+        tk_mock.filedialog = types.ModuleType("tkinter.filedialog")
+        tk_mock.font = types.ModuleType("tkinter.font")
+        tk_mock.constants = types.ModuleType("tkinter.constants")
+        sys.modules["tkinter"] = tk_mock
+        sys.modules["tkinter.ttk"] = tk_mock.ttk
+        sys.modules["tkinter.messagebox"] = tk_mock.messagebox
+        sys.modules["tkinter.filedialog"] = tk_mock.filedialog
+        sys.modules["tkinter.font"] = tk_mock.font
+        sys.modules["tkinter.constants"] = tk_mock.constants
+
+
+_asegurar_tkinter_en_nube()
+
 
 def cargar_modulo_por_ruta(nombre_interno, nombre_archivo):
     carpeta = os.path.dirname(os.path.abspath(__file__))
     ruta = os.path.join(carpeta, nombre_archivo)
     if not os.path.exists(ruta):
-        raise FileNotFoundError(f"No se encontró el archivo '{nombre_archivo}' en:\n{carpeta}")
+        raise FileNotFoundError(f"No se encontró '{nombre_archivo}' en: {carpeta}")
     spec = importlib.util.spec_from_file_location(nombre_interno, ruta)
     mod = importlib.util.module_from_spec(spec)
     sys.modules[nombre_interno] = mod
@@ -37,13 +74,12 @@ def cargar_modulo_por_ruta(nombre_interno, nombre_archivo):
     return mod
 
 
-mod1 = cargar_modulo_por_ruta("script1_simulador", "1_simulador_interactivo_cartonvivo.py")
 mod2 = cargar_modulo_por_ruta("script2_corrector", "2_corrector_formato_y_excels.py")
 mod3 = cargar_modulo_por_ruta("script3_josue", "3_integrador_arboles_y_pauta_josue.py")
 
 
 # ==============================================================================
-# 2. REPARADOR AUTOMÁTICO DE LA TABLA DE CONTENIDOS (PÁGINA 2) Y SINCRONIZADOR
+# 2. REPARADOR DEL ÍNDICE (PÁGINA 2) Y PIPELINE UNIFICADO (SCRIPTS 2 + 3)
 # ==============================================================================
 
 def _es_linea_toc(p):
@@ -194,7 +230,7 @@ def calcular_escenario_sensibilidad(cfg_base, factor_ingresos=1.0, factor_costos
     }
 
 
-def ejecutar_pipeline_completo_1_2_3(cfg_vivo, directorio_destino):
+def generar_entrega_completa_en_servidor(cfg_vivo, directorio_destino):
     for k, v in cfg_vivo.items():
         if k not in ["INVERSIONES_LISTA", "COSTOS_VAR_LISTA", "COSTOS_FIJOS_LISTA", "PERSONAL_LISTA"]:
             mod2.DEFAULTS[k] = copy.deepcopy(v)
@@ -206,12 +242,7 @@ def ejecutar_pipeline_completo_1_2_3(cfg_vivo, directorio_destino):
 
     resultados_vivos = mod2.ejecutar_motor_financiero(cfg_vivo)
     apellidos = cfg_vivo.get("APELLIDOS_ENTREGA", "Vargas,Muñoz,Jofre").strip()
-
-    if os.path.basename(os.path.normpath(directorio_destino)).lower() == apellidos.lower():
-        carpeta_entrega = os.path.normpath(directorio_destino)
-    else:
-        carpeta_entrega = os.path.join(directorio_destino, apellidos)
-
+    carpeta_entrega = os.path.join(directorio_destino, apellidos)
     os.makedirs(carpeta_entrega, exist_ok=True)
 
     r_exc1, r_exc2, r_exc3 = mod2.exportar_tres_excels_limpios(resultados_vivos, carpeta_entrega)
@@ -256,420 +287,448 @@ def ejecutar_pipeline_completo_1_2_3(cfg_vivo, directorio_destino):
                 tbl.rows[idx_fila].cells[4].text = f"{mod2.fmt_dec_cl(esc['tir_s'], 2)}%"
 
     doc_final.save(ruta_word)
+
     ruta_pdf, ruta_zip, pdf_ok = mod3.actualizar_pdf_y_zip_final(ruta_word)
+    if not pdf_ok and shutil.which("libreoffice"):
+        try:
+            subprocess.run(
+                ["libreoffice", "--headless", "--convert-to", "pdf", "--outdir", carpeta_entrega, ruta_word],
+                check=True, timeout=60
+            )
+            with zipfile.ZipFile(ruta_zip, "w", zipfile.ZIP_DEFLATED) as zf:
+                for arch in os.listdir(carpeta_entrega):
+                    r_full = os.path.join(carpeta_entrega, arch)
+                    if os.path.isfile(r_full):
+                        zf.write(r_full, arcname=os.path.join(apellidos, arch))
+        except Exception:
+            pass
 
     return {
-        "carpeta_entrega": carpeta_entrega,
         "ruta_zip": ruta_zip,
         "ruta_word": ruta_word,
         "ruta_pdf": ruta_pdf,
-        "pdf_ok": pdf_ok,
         "excels": [r_exc1, r_exc2, r_exc3],
     }
 
 
 # ==============================================================================
-# 3. INTERFAZ VERTICAL ALINEADA DE 3 COLUMNAS (TAMAÑOS DE FUENTE ENTEROS)
+# 3. INTERFAZ VISUAL EN MODO CLARO FIJO + LISTAS DINÁMICAS (+ AGREGAR / 🗑️ QUITAR)
 # ==============================================================================
 
-class ConsolaMaestraSupuestos:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Simulador y Generador Automático de Proyectos - Cartón Vivo Osorno (Scripts 1 + 2 + 3 Conectados)")
-        self.root.geometry("1120x880")
-        self.root.configure(bg="#F8FAFC")
+st.set_page_config(page_title="Consola Interactiva ULagos - Cartón Vivo Osorno", layout="wide")
 
-        self.carpeta_salida = tk.StringVar(value=os.path.dirname(os.path.abspath(__file__)))
+# CSS que fuerza Modo Claro (#F8FAFC) y casillas blancas con letras negras aunque el navegador esté en Modo Oscuro
+st.markdown(
+    """
+    <style>
+    .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
+        background-color: #F8FAFC !important;
+        color: #0F172A !important;
+    }
+    .block-container {
+        padding-top: 1.2rem !important;
+        padding-bottom: 2.5rem !important;
+        max-width: 1240px !important;
+    }
+    .sec-header {
+        background-color: #DBEAFE !important;
+        color: #1E3A8A !important;
+        padding: 8px 14px;
+        font-weight: 700;
+        font-size: 14px;
+        border-radius: 5px;
+        margin-top: 16px;
+        margin-bottom: 10px;
+        border-left: 4px solid #1D4ED8;
+    }
+    .sub-header {
+        background-color: #E2E8F0 !important;
+        color: #1E293B !important;
+        padding: 5px 12px;
+        font-weight: 700;
+        font-size: 13px;
+        border-radius: 4px;
+        margin-top: 10px;
+        margin-bottom: 6px;
+    }
+    .lbl-col {
+        font-weight: 700 !important;
+        color: #0F172A !important;
+        font-size: 13.5px;
+        padding-top: 7px;
+    }
+    .exp-col {
+        color: #334155 !important;
+        font-size: 12.5px;
+        padding-top: 7px;
+        line-height: 1.35;
+    }
+    /* Casillas de texto y selectores siempre blancos con texto negro */
+    div[data-baseweb="input"] > div,
+    div[data-baseweb="select"] > div {
+        background-color: #FFFFFF !important;
+        color: #0F172A !important;
+        border: 1px solid #94A3B8 !important;
+        border-radius: 4px !important;
+    }
+    input {
+        color: #0F172A !important;
+        -webkit-text-fill-color: #0F172A !important;
+        background-color: #FFFFFF !important;
+        font-weight: 600 !important;
+    }
+    div[data-baseweb="select"] span {
+        color: #0F172A !important;
+    }
+    div[data-testid="stTextInput"], div[data-testid="stSelectbox"] {
+        margin-bottom: -8px;
+    }
+    button[kind="secondary"] {
+        background-color: #FFFFFF !important;
+        color: #0F172A !important;
+        border: 1px solid #94A3B8 !important;
+        font-weight: 700 !important;
+    }
+    button[kind="secondary"]:hover {
+        background-color: #EFF6FF !important;
+        border-color: #1D4ED8 !important;
+        color: #1D4ED8 !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
-        self.cfg = copy.deepcopy(mod2.DEFAULTS)
-        self.cfg["INVERSIONES_LISTA"] = copy.deepcopy(mod2.INVERSIONES_DEFAULT)
-        self.cfg["COSTOS_VAR_LISTA"] = copy.deepcopy(mod2.COSTOS_VAR_DEFAULT)
-        self.cfg["COSTOS_FIJOS_LISTA"] = copy.deepcopy(mod2.COSTOS_FIJOS_DEFAULT)
-        self.cfg["PERSONAL_LISTA"] = copy.deepcopy(mod2.PERSONAL_DEFAULT)
+if "cfg" not in st.session_state:
+    c_init = copy.deepcopy(mod2.DEFAULTS)
+    c_init["INVERSIONES_LISTA"] = copy.deepcopy(INVERSIONES_DEFAULT)
+    c_init["COSTOS_VAR_LISTA"] = copy.deepcopy(COSTOS_VAR_DEFAULT)
+    c_init["COSTOS_FIJOS_LISTA"] = copy.deepcopy(COSTOS_FIJOS_DEFAULT)
+    c_init["PERSONAL_LISTA"] = copy.deepcopy(PERSONAL_DEFAULT)
+    st.session_state.cfg = c_init
 
-        self.vars_simples = {}
-        self.vars_inv = []
-        self.vars_cv = []
-        self.vars_cf = []
-        self.vars_pers = []
+cfg = st.session_state.cfg
 
-        self._construir_ui()
-        self.recalcular_en_vivo(mostrar_aviso=False)
+# Botones rápidos de Presets arriba
+col_p1, col_p2, col_p3 = st.columns([1.2, 1.2, 1.2])
+if col_p1.button("🔶 Cargar Precios Sombra SNI 2026 (TSD 5,5%)", use_container_width=True):
+    cfg["TASA_DESCUENTO_SOCIAL"] = 0.055
+    cfg["FC_MOC"], cfg["FC_MOSC"], cfg["FC_MONC"], cfg["FC_DIVISA"] = 0.97, 0.95, 0.91, 1.00
+    cfg["OTROS_BEN_SOC_ANUAL"] = 0.0
+    for k in list(st.session_state.keys()):
+        if k.startswith("in_"):
+            del st.session_state[k]
+    st.rerun()
 
-    def _construir_ui(self):
-        frame_banner = tk.Frame(self.root, bg="#0F172A", padx=20, pady=12)
-        frame_banner.pack(fill="x", side="top")
+if col_p2.button("🔷 Cargar Caso Base Original (TSD 6,0%)", use_container_width=True):
+    cfg["TASA_DESCUENTO_SOCIAL"] = 0.06
+    cfg["FC_MOC"], cfg["FC_MOSC"], cfg["FC_MONC"], cfg["FC_DIVISA"] = 1.00, 0.85, 0.68, 1.01
+    cfg["OTROS_BEN_SOC_ANUAL"] = 2500000.0
+    for k in list(st.session_state.keys()):
+        if k.startswith("in_"):
+            del st.session_state[k]
+    st.rerun()
 
-        tk.Label(
-            frame_banner,
-            text="PANEL INTERACTIVO DE SUPUESTOS Y SIMULACIÓN EN VIVO (PAUTA 10 PUNTOS ULAGOS)",
-            font=("Arial", 12, "bold"), fg="#FFFFFF", bg="#0F172A"
-        ).pack(anchor="w", pady=(0, 6))
+if col_p3.button("♻️ Restaurar Todas las Listas por Defecto", use_container_width=True):
+    c_reset = copy.deepcopy(mod2.DEFAULTS)
+    c_reset["INVERSIONES_LISTA"] = copy.deepcopy(INVERSIONES_DEFAULT)
+    c_reset["COSTOS_VAR_LISTA"] = copy.deepcopy(COSTOS_VAR_DEFAULT)
+    c_reset["COSTOS_FIJOS_LISTA"] = copy.deepcopy(COSTOS_FIJOS_DEFAULT)
+    c_reset["PERSONAL_LISTA"] = copy.deepcopy(PERSONAL_DEFAULT)
+    st.session_state.cfg = c_reset
+    for k in list(st.session_state.keys()):
+        if k.startswith("in_") or k.startswith("dyn_"):
+            del st.session_state[k]
+    st.rerun()
 
-        self.lbl_kpi_priv = tk.Label(
-            frame_banner,
-            text="> PRIVADO (12%):  VAN = $0   |   TIR = 0.00%   |   Payback = 0.00 años",
-            font=("Consolas", 10, "bold"), fg="#38BDF8", bg="#0F172A"
+banner_placeholder = st.empty()
+
+
+def fila_3_columnas(clave_unica, etiqueta, valor_actual, explicacion, es_texto=False, es_entero=False):
+    c_lbl, c_inp, c_exp = st.columns([2.3, 1.6, 4.1])
+    with c_lbl:
+        st.markdown(f"<div class='lbl-col'>{etiqueta}</div>", unsafe_allow_html=True)
+    with c_inp:
+        nuevo_txt = st.text_input(
+            etiqueta, value=str(valor_actual), key=f"in_{clave_unica}", label_visibility="collapsed"
         )
-        self.lbl_kpi_priv.pack(anchor="w")
+    with c_exp:
+        st.markdown(f"<div class='exp-col'>{explicacion}</div>", unsafe_allow_html=True)
 
-        self.lbl_kpi_soc = tk.Label(
-            frame_banner,
-            text="> SOCIAL  (6%):   VANS = $0   |   TIRS = 0.00%   |   Payback = 0.00 años",
-            font=("Consolas", 10, "bold"), fg="#4ADE80", bg="#0F172A"
-        )
-        self.lbl_kpi_soc.pack(anchor="w", pady=(2, 0))
-
-        frame_tools = tk.Frame(self.root, bg="#E2E8F0", padx=18, pady=6)
-        frame_tools.pack(fill="x", side="top")
-
-        tk.Label(frame_tools, text="Carpeta Destino:", font=("Arial", 9, "bold"), bg="#E2E8F0", fg="#1E293B").pack(side="left")
-        ttk.Entry(frame_tools, textvariable=self.carpeta_salida, width=48).pack(side="left", padx=6)
-
-        tk.Button(
-            frame_tools, text="Cambiar...", command=self._elegir_carpeta,
-            bg="#334155", fg="white", font=("Arial", 8, "bold"), relief="flat", padx=8, pady=2
-        ).pack(side="left", padx=2)
-
-        tk.Button(
-            frame_tools, text="Abrir Carpeta", command=lambda: mod1.abrir_carpeta_en_pantalla(self.carpeta_salida.get()),
-            bg="#0D9488", fg="white", font=("Arial", 8, "bold"), relief="flat", padx=8, pady=2
-        ).pack(side="left", padx=4)
-
-        tk.Button(
-            frame_tools, text="Cargar Precios Sombra SNI 2026 (TSD 5,5%)", command=self._cargar_preset_sni_2026,
-            bg="#EA580C", fg="white", font=("Arial", 8, "bold"), relief="flat", padx=8, pady=2
-        ).pack(side="right", padx=4)
-
-        tk.Button(
-            frame_tools, text="Cargar Caso Base Original (TSD 6,0%)", command=self._cargar_preset_base,
-            bg="#475569", fg="white", font=("Arial", 8, "bold"), relief="flat", padx=8, pady=2
-        ).pack(side="right", padx=4)
-
-        frame_bottom = tk.Frame(self.root, bg="#CBD5E1", padx=16, pady=10)
-        frame_bottom.pack(fill="x", side="bottom")
-
-        btn_recalc = tk.Button(
-            frame_bottom,
-            text="🔄  RECALCULAR VAN / TIR EN VIVO",
-            command=lambda: self.recalcular_en_vivo(mostrar_aviso=True),
-            bg="#0284C7", fg="white", font=("Arial", 10, "bold"),
-            relief="flat", pady=8, cursor="hand2"
-        )
-        btn_recalc.pack(side="left", fill="x", expand=True, padx=(0, 8))
-
-        btn_generar = tk.Button(
-            frame_bottom,
-            text="🚀  ACTUALIZAR EXCEL + WORD + PDF + ZIP (PAUTA 10 PUNTOS)",
-            command=self.accion_actualizar_todo,
-            bg="#15803D", fg="white", font=("Arial", 10, "bold"),
-            relief="flat", pady=8, cursor="hand2"
-        )
-        btn_generar.pack(side="left", fill="x", expand=True, padx=(8, 0))
-
-        contenedor_scroll = tk.Frame(self.root, bg="#F8FAFC")
-        contenedor_scroll.pack(fill="both", expand=True)
-
-        self.canvas = tk.Canvas(contenedor_scroll, bg="#F8FAFC", highlightthickness=0)
-        scrollbar = ttk.Scrollbar(contenedor_scroll, orient="vertical", command=self.canvas.yview)
-        self.frame_form = tk.Frame(self.canvas, bg="#F8FAFC", padx=22, pady=10)
-
-        self.frame_form.bind(
-            "<Configure>",
-            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-        )
-        self.canvas_win = self.canvas.create_window((0, 0), window=self.frame_form, anchor="nw")
-        self.canvas.bind(
-            "<Configure>",
-            lambda e: self.canvas.itemconfig(self.canvas_win, width=e.width)
-        )
-        self.canvas.configure(yscrollcommand=scrollbar.set)
-
-        self.canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-
-        self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
-
-        self.frame_form.grid_columnconfigure(0, minsize=290, weight=0)
-        self.frame_form.grid_columnconfigure(1, minsize=210, weight=0)
-        self.frame_form.grid_columnconfigure(2, weight=1)
-
-        self.fila_actual = 0
-        self._poblar_formulario_completo()
-
-    def _on_mousewheel(self, event):
-        self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-
-    def _agregar_encabezado_seccion(self, titulo):
-        f_hdr = tk.Frame(self.frame_form, bg="#DBEAFE", padx=10, pady=5)
-        f_hdr.grid(row=self.fila_actual, column=0, columnspan=3, sticky="ew", pady=(14, 6))
-        tk.Label(
-            f_hdr, text=titulo, font=("Arial", 10, "bold"),
-            fg="#1E3A8A", bg="#DBEAFE"
-        ).pack(anchor="w")
-        self.fila_actual += 1
-
-    def _agregar_fila_parametro(self, clave, etiqueta, explicacion):
-        tk.Label(
-            self.frame_form, text=etiqueta, font=("Arial", 9, "bold"),
-            fg="#0F172A", bg="#F8FAFC", anchor="w"
-        ).grid(row=self.fila_actual, column=0, sticky="w", padx=(4, 10), pady=4)
-
-        var = tk.StringVar(value=str(self.cfg[clave]))
-        self.vars_simples[clave] = var
-        ent = ttk.Entry(self.frame_form, textvariable=var, width=28, font=("Arial", 9))
-        ent.grid(row=self.fila_actual, column=1, sticky="w", padx=(0, 14), pady=4)
-
-        tk.Label(
-            self.frame_form, text=explicacion, font=("Arial", 9),
-            fg="#475569", bg="#F8FAFC", anchor="w", justify="left", wraplength=540
-        ).grid(row=self.fila_actual, column=2, sticky="w", pady=4)
-
-        self.fila_actual += 1
-
-    def _poblar_formulario_completo(self):
-        self._agregar_encabezado_seccion("1. PARÁMETROS GENERALES Y TASAS DE DESCUENTO")
-        self._agregar_fila_parametro("NOMBRE_PROYECTO", "Nombre del Proyecto:", "(Nombre oficial que saldrá en la portada de la ULagos y en las conclusiones automáticas del Word)")
-        self._agregar_fila_parametro("APELLIDOS_ENTREGA", "Apellidos Carpeta y ZIP:", "(Nombre exacto para la carpeta, el Word, el PDF y el archivo comprimido ZIP de entrega)")
-        self._agregar_fila_parametro("INTEGRANTES", "Integrantes del Grupo:", "(Nombres completos en mayúsculas separados por coma para el bloque de la portada)")
-        self._agregar_fila_parametro("DOCENTE", "Nombre Docente:", "(Nombre de la profesora guía del módulo Formulación y Evaluación de Proyectos)")
-        self._agregar_fila_parametro("HORIZONTE_ANIOS", "Horizonte de Evaluación:", "(Cantidad de años a proyectar en las tablas. La pauta exige evaluar a 10 años -> deja 10)")
-        self._agregar_fila_parametro("IVA", "Tasa de IVA (Impuesto al Valor Agregado):", "(En Chile el IVA legal es 19% -> escribe 0.19. El programa lo usa para descontar el IVA automáticamente)")
-        self._agregar_fila_parametro("IMPUESTO_RENTA", "Impuesto a la Renta (1ª Categoría SII):", "(Impuesto sobre las ganancias de la empresa: usa 0.25 para Pyme [25%]. Solo se cobra en el Flujo Privado)")
-        self._agregar_fila_parametro("TASA_DESCUENTO_PRIVADA", "Tasa de Descuento Privada (Costo de Capital):", "(Rentabilidad mínima anual que exige el dueño/inversionista para calcular el VAN Privado: ej. 0.12 = 12%)")
-        self._agregar_fila_parametro("TASA_DESCUENTO_SOCIAL", "Tasa Social de Descuento (MIDESO / SNI):", "(Tasa exigida por el Estado para calcular el VANS: usa 0.06 [6%] o 0.055 [5,5% oficial vigente SNI 2026])")
-        self._agregar_fila_parametro("DIAS_DESFASE_CT", "Días de Desfase para Capital de Trabajo:", "(Días que la planta debe operar pagando sueldos e insumos antes de cobrar las primeras facturas. Ej: 45 días)")
-
-        self._agregar_encabezado_seccion("2. FACTORES DE CORRECCIÓN SOCIAL (PRECIOS SOMBRA SNI / MIDESO - PUNTO 8)")
-        self._agregar_fila_parametro("FC_MOC", "Factor Mano de Obra Calificada (MOC):", "(Para profesionales/jefes. Usa 1.00 en caso base o 0.97 según Precios Sociales SNI 2026)")
-        self._agregar_fila_parametro("FC_MOSC", "Factor Mano de Obra Semicalificada (MOSC):", "(Para técnicos/operadores de máquinas. Usa 0.85 en caso base o 0.95 según Precios Sociales SNI 2026)")
-        self._agregar_fila_parametro("FC_MONC", "Factor Mano de Obra No Calificada (MONC):", "(Para recolectores/operarios. Usa 0.68 en caso base o 0.91 según Precios Sociales SNI 2026)")
-        self._agregar_fila_parametro("FC_DIVISA", "Factor Social de la Divisa (Dólar/Importados):", "(Premio social a la divisa de MIDESO = 1.01 [o 1.00 en SNI 2026]. Ajusta máquinas compradas en el extranjero)")
-        self._agregar_fila_parametro("ARANCEL_IMP", "Arancel Aduanero de Importación:", "(Impuesto de aduana en Chile = 6% -> escribe 0.06. En el Flujo Social el programa lo descuenta)")
-
-        self._agregar_encabezado_seccion("3. DEMANDA, PRODUCTOS E INGRESOS (PUNTOS 4, 5.a y 5.d)")
-        self._agregar_fila_parametro("RESIDUO_TON_ANIO_1", "Cartón Recolectado el Año 1 (Toneladas):", "(Toneladas de cartón limpio captadas en calle E. Ramírez el primer año. Ej: 15.0 ton/año = 50 kg/día)")
-        self._agregar_fila_parametro("TASA_CRECIMIENTO", "Tasa de Crecimiento Anual (Años 2 al 10):", "(Ritmo al que crecen cada año las ventas y la recolección de cartón. Ej: escribe 0.05 para subir 5% anual)")
-        self._agregar_fila_parametro("P1_NOMBRE", "Nombre Producto Línea 1:", "(Nombre comercial de tu primera línea de productos para escuelas DAEM y jardines infantiles)")
-        self._agregar_fila_parametro("P1_UNIDADES", "Unidades Vendidas Año 1 - Línea 1:", "(Cantidad de unidades de la Línea 1 vendidas en todo el primer año. Ej: 3000 unidades/año)")
-        self._agregar_fila_parametro("P1_PRECIO_BRUTO", "Precio de Venta CON IVA - Línea 1 ($):", "(Precio al que vendes cada unidad con IVA incluido. Ej: 16000 pesos. El programa lo divide por 1.19 solo)")
-        self._agregar_fila_parametro("P1_KG_CARTON", "Kg de Cartón por Unidad - Línea 1:", "(Kilos de cartón que se necesitan para fabricar 1 unidad de la Línea 1. Ej: 2.5 kg por set)")
-        self._agregar_fila_parametro("P2_NOMBRE", "Nombre Producto Línea 2:", "(Nombre comercial de tu segunda línea enfocada en centros y clubes de adulto mayor)")
-        self._agregar_fila_parametro("P2_UNIDADES", "Unidades Vendidas Año 1 - Línea 2:", "(Cantidad de unidades de la Línea 2 vendidas en todo el primer año. Ej: 1500 unidades/año)")
-        self._agregar_fila_parametro("P2_PRECIO_BRUTO", "Precio de Venta CON IVA - Línea 2 ($):", "(Precio al que vendes cada unidad con IVA incluido. Ej: 19000 pesos. El programa le quita el 19% de IVA solo)")
-        self._agregar_fila_parametro("P2_KG_CARTON", "Kg de Cartón por Unidad - Línea 2:", "(Kilos de cartón necesarios para fabricar 1 unidad de la Línea 2. Ej: 2.0 kg por juego)")
-
-        self._agregar_encabezado_seccion("4. BENEFICIOS SOCIALES EXTERNOS (LIBERACIÓN DE RECURSOS - PUNTO 8)")
-        self._agregar_fila_parametro("AHORRO_MUNI_TON", "Ahorro Municipal por Tonelada Desviada ($):", "(Dinero con IVA que ahorra la Municipalidad de Osorno en camiones y Vertedero de Curaco por tonelada: ej. 48000)")
-        self._agregar_fila_parametro("OTROS_BEN_SOC_ANUAL", "Otros Beneficios Sociales Anuales ($):", "(Valor anual en pesos de beneficios extra para la comuna. Pon 2500000 o 0 si usas criterio conservador SNI)")
-
-        self._agregar_encabezado_seccion("5. INVERSIONES EN ACTIVOS FIJOS CON IVA (PUNTO 5.b)")
-        explicaciones_inv = [
-            "(Costo de compra en Año 0 con IVA: ej. 8500000. Es máquina importada, dura 10 años y recupera 10% residual)",
-            "(Costo en Año 0 con IVA: ej. 3500000. Es nacional y tiene vida útil de 5 años, por lo que se renueva en el Año 5)",
-            "(Costo en Año 0 con IVA: ej. 2000000. Es importado, vida útil de 5 años con renovación en el Año 5)",
-            "(Gasto inicial en Año 0 en adecuar el galpón en Ovejería, electricidad trifásica y permiso SEREMI: ej. 2000000)",
-        ]
-        etiquetas_inv = [
-            "Troqueladora Industrial ($ con IVA):",
-            "Guillotina, Mesones y Moldes ($ con IVA):",
-            "Equipo Serigrafía y Secado ($ con IVA):",
-            "Habilitación de Galpón y Permisos ($ con IVA):",
-        ]
-        for idx, inv in enumerate(self.cfg["INVERSIONES_LISTA"]):
-            tk.Label(
-                self.frame_form, text=etiquetas_inv[idx], font=("Arial", 9, "bold"),
-                fg="#0F172A", bg="#F8FAFC", anchor="w"
-            ).grid(row=self.fila_actual, column=0, sticky="w", padx=(4, 10), pady=4)
-
-            v_monto = tk.StringVar(value=str(inv["monto_bruto"]))
-            self.vars_inv.append(v_monto)
-            ttk.Entry(self.frame_form, textvariable=v_monto, width=28, font=("Arial", 9)).grid(
-                row=self.fila_actual, column=1, sticky="w", padx=(0, 14), pady=4
-            )
-            tk.Label(
-                self.frame_form, text=explicaciones_inv[idx], font=("Arial", 9),
-                fg="#475569", bg="#F8FAFC", anchor="w", justify="left", wraplength=540
-            ).grid(row=self.fila_actual, column=2, sticky="w", pady=4)
-            self.fila_actual += 1
-
-        self._agregar_encabezado_seccion("6. COSTOS OPERATIVOS VARIABLES Y FIJOS (PUNTO 5.c)")
-        etiquetas_cv = [
-            "Costo Unitario Tintas y Barniz ($ c/IVA):",
-            "Costo Unitario Caja y Etiqueta ($ c/IVA):",
-            "Costo Flete Furgón por Tonelada ($ c/IVA):",
-        ]
-        explicaciones_cv = [
-            "(Gasto variable en pinturas ecológicas al agua EN-71, pegamento y barniz por cada juego fabricado: ej. 1800)",
-            "(Gasto variable en caja de presentación, instructivo y etiqueta por cada juego fabricado: ej. 600)",
-            "(Tarifa pagada al furgón contratado por cada tonelada retirada en calle Eleuterio Ramírez: ej. 30000)",
-        ]
-        for idx, cv in enumerate(self.cfg["COSTOS_VAR_LISTA"]):
-            tk.Label(
-                self.frame_form, text=etiquetas_cv[idx], font=("Arial", 9, "bold"),
-                fg="#0F172A", bg="#F8FAFC", anchor="w"
-            ).grid(row=self.fila_actual, column=0, sticky="w", padx=(4, 10), pady=4)
-
-            v_cv = tk.StringVar(value=str(cv["costo"]))
-            self.vars_cv.append(v_cv)
-            ttk.Entry(self.frame_form, textvariable=v_cv, width=28, font=("Arial", 9)).grid(
-                row=self.fila_actual, column=1, sticky="w", padx=(0, 14), pady=4
-            )
-            tk.Label(
-                self.frame_form, text=explicaciones_cv[idx], font=("Arial", 9),
-                fg="#475569", bg="#F8FAFC", anchor="w", justify="left", wraplength=540
-            ).grid(row=self.fila_actual, column=2, sticky="w", pady=4)
-            self.fila_actual += 1
-
-        etiquetas_cf = [
-            "Arriendo Mensual Galpón Ovejería ($ Exento):",
-            "Luz (Saesa), Agua (Suralis) e Internet ($/mes):",
-            "Contador, Patente y Seguros ($/mes c/IVA):",
-        ]
-        explicaciones_cf = [
-            "(Arriendo mensual del galpón de 140 m2 en Sector Industrial Ovejería: ej. 450000 pesos al mes)",
-            "(Gasto fijo mensual en electricidad trifásica Saesa, agua potable Suralis e internet: ej. 180000 al mes)",
-            "(Gasto fijo mensual en contabilidad Pro Pyme, patente municipal en Osorno y seguros: ej. 150000 al mes)",
-        ]
-        for idx, cf in enumerate(self.cfg["COSTOS_FIJOS_LISTA"]):
-            tk.Label(
-                self.frame_form, text=etiquetas_cf[idx], font=("Arial", 9, "bold"),
-                fg="#0F172A", bg="#F8FAFC", anchor="w"
-            ).grid(row=self.fila_actual, column=0, sticky="w", padx=(4, 10), pady=4)
-
-            v_cf = tk.StringVar(value=str(cf["mensual"]))
-            self.vars_cf.append(v_cf)
-            ttk.Entry(self.frame_form, textvariable=v_cf, width=28, font=("Arial", 9)).grid(
-                row=self.fila_actual, column=1, sticky="w", padx=(0, 14), pady=4
-            )
-            tk.Label(
-                self.frame_form, text=explicaciones_cf[idx], font=("Arial", 9),
-                fg="#475569", bg="#F8FAFC", anchor="w", justify="left", wraplength=540
-            ).grid(row=self.fila_actual, column=2, sticky="w", pady=4)
-            self.fila_actual += 1
-
-        self._agregar_encabezado_seccion("7. DOTACIÓN DE PERSONAL Y SUELDOS MENSUALES (PUNTO 4.3)")
-        etiquetas_pers = [
-            "Sueldo Bruto Jefe de Planta (1 persona - MOC):",
-            "Sueldo Bruto Operador Técnico (2 personas - MOSC):",
-            "Sueldo Bruto Operario Recolección (2 pers. - MONC):",
-        ]
-        explicaciones_pers = [
-            "(Sueldo mensual bruto del Jefe de Planta y Ventas [1 trabajador MOC]: ej. 950000 pesos/mes)",
-            "(Sueldo mensual bruto unitario de cada Operador de Corte y Pintura [son 2 trabajadores MOSC]: ej. 600000 c/u)",
-            "(Sueldo mensual bruto unitario de cada Operario de Recolección y Armado [son 2 trabajadores MONC]: ej. 520000 c/u)",
-        ]
-        for idx, p_item in enumerate(self.cfg["PERSONAL_LISTA"]):
-            tk.Label(
-                self.frame_form, text=etiquetas_pers[idx], font=("Arial", 9, "bold"),
-                fg="#0F172A", bg="#F8FAFC", anchor="w"
-            ).grid(row=self.fila_actual, column=0, sticky="w", padx=(4, 10), pady=4)
-
-            v_p = tk.StringVar(value=str(p_item["sueldo_bruto_mensual"]))
-            self.vars_pers.append(v_p)
-            ttk.Entry(self.frame_form, textvariable=v_p, width=28, font=("Arial", 9)).grid(
-                row=self.fila_actual, column=1, sticky="w", padx=(0, 14), pady=4
-            )
-            tk.Label(
-                self.frame_form, text=explicaciones_pers[idx], font=("Arial", 9),
-                fg="#475569", bg="#F8FAFC", anchor="w", justify="left", wraplength=540
-            ).grid(row=self.fila_actual, column=2, sticky="w", pady=4)
-            self.fila_actual += 1
-
-    def _cargar_preset_sni_2026(self):
-        self.vars_simples["TASA_DESCUENTO_SOCIAL"].set("0.055")
-        self.vars_simples["FC_MOC"].set("0.97")
-        self.vars_simples["FC_MOSC"].set("0.95")
-        self.vars_simples["FC_MONC"].set("0.91")
-        self.vars_simples["FC_DIVISA"].set("1.00")
-        self.vars_simples["OTROS_BEN_SOC_ANUAL"].set("0")
-        self.recalcular_en_vivo(mostrar_aviso=True)
-
-    def _cargar_preset_base(self):
-        self.vars_simples["TASA_DESCUENTO_SOCIAL"].set("0.06")
-        self.vars_simples["FC_MOC"].set("1.00")
-        self.vars_simples["FC_MOSC"].set("0.85")
-        self.vars_simples["FC_MONC"].set("0.68")
-        self.vars_simples["FC_DIVISA"].set("1.01")
-        self.vars_simples["OTROS_BEN_SOC_ANUAL"].set("2500000")
-        self.recalcular_en_vivo(mostrar_aviso=True)
-
-    def _elegir_carpeta(self):
-        c = filedialog.askdirectory(initialdir=self.carpeta_salida.get(), title="Seleccionar carpeta de entrega")
-        if c:
-            self.carpeta_salida.set(os.path.normpath(c))
-
-    def _leer_todo_el_formulario(self):
-        campos_texto = {"NOMBRE_PROYECTO", "APELLIDOS_ENTREGA", "INTEGRANTES", "DOCENTE", "P1_NOMBRE", "P2_NOMBRE"}
-        campos_enteros = {"HORIZONTE_ANIOS", "DIAS_DESFASE_CT", "P1_UNIDADES", "P2_UNIDADES"}
-
-        for k, var in self.vars_simples.items():
-            val_str = var.get().strip()
-            if k in campos_texto:
-                self.cfg[k] = val_str
-            elif k in campos_enteros:
-                self.cfg[k] = int(float(val_str.replace(",", ".")))
-            else:
-                self.cfg[k] = float(val_str.replace(",", "."))
-
-        for idx, v_inv in enumerate(self.vars_inv):
-            self.cfg["INVERSIONES_LISTA"][idx]["monto_bruto"] = float(v_inv.get().strip().replace(",", "."))
-
-        for idx, v_cv in enumerate(self.vars_cv):
-            self.cfg["COSTOS_VAR_LISTA"][idx]["costo"] = float(v_cv.get().strip().replace(",", "."))
-
-        for idx, v_cf in enumerate(self.vars_cf):
-            self.cfg["COSTOS_FIJOS_LISTA"][idx]["mensual"] = float(v_cf.get().strip().replace(",", "."))
-
-        for idx, v_p in enumerate(self.vars_pers):
-            self.cfg["PERSONAL_LISTA"][idx]["sueldo_bruto_mensual"] = float(v_p.get().strip().replace(",", "."))
-
-    def recalcular_en_vivo(self, mostrar_aviso=False):
-        try:
-            self._leer_todo_el_formulario()
-            res = mod2.ejecutar_motor_financiero(self.cfg)
-            m = res["metricas"]
-            tp = self.cfg["TASA_DESCUENTO_PRIVADA"] * 100
-            ts = self.cfg["TASA_DESCUENTO_SOCIAL"] * 100
-
-            self.lbl_kpi_priv.config(
-                text=f"> PRIVADO ({tp:.1f}%):  VAN = {mod2.fmt_clp(m['van_privado'])}   |   TIR = {m['tir_privada']:.2f}%   |   Payback = {m['payback_privado']} años"
-            )
-            self.lbl_kpi_soc.config(
-                text=f"> SOCIAL  ({ts:.1f}%):  VANS = {mod2.fmt_clp(m['van_social'])}   |   TIRS = {m['tir_social']:.2f}%   |   Payback = {m['payback_social']} años"
-            )
-            if mostrar_aviso:
-                messagebox.showinfo(
-                    "Simulación en Vivo Actualizada",
-                    f"Indicadores recalculados correctamente:\n\n"
-                    f"• VAN Privado ({tp:.1f}%): {mod2.fmt_clp(m['van_privado'])} (TIR: {m['tir_privada']:.2f}%)\n"
-                    f"• VANS Social ({ts:.1f}%): {mod2.fmt_clp(m['van_social'])} (TIRS: {m['tir_social']:.2f}%)"
-                )
-        except Exception as e:
-            messagebox.showerror("Error en Formato Numérico", f"Revisa que las casillas numéricas no tengan letras:\n\n{e}")
-
-    def accion_actualizar_todo(self):
-        try:
-            self.recalcular_en_vivo(mostrar_aviso=False)
-            carpeta_destino = self.carpeta_salida.get().strip()
-            info = ejecutar_pipeline_completo_1_2_3(self.cfg, carpeta_destino)
-            mod1.abrir_carpeta_en_pantalla(info["carpeta_entrega"])
-
-            messagebox.showinfo(
-                "¡Entrega Completa Actualizada (Scripts 1 + 2 + 3)!",
-                f"Se actualizaron todos los archivos con tus nuevos supuestos:\n\n"
-                f"📦 ZIP: {info['ruta_zip']}\n"
-                f"📄 Word: {os.path.basename(info['ruta_word'])} (Índice en Pág. 2 reparado + Árboles + CANVAS + MML)\n"
-                f"📕 PDF: {os.path.basename(info['ruta_pdf'])}\n"
-                f"📊 3 Libros Excel con fórmulas vivas actualizados."
-            )
-        except Exception as e:
-            messagebox.showerror("Error al Generar Archivos", f"Cierra Word y Excel antes de actualizar:\n\n{e}")
+    if es_texto:
+        return nuevo_txt.strip()
+    try:
+        val_num = float(nuevo_txt.strip().replace(",", "."))
+        return int(val_num) if es_entero else val_num
+    except Exception:
+        return valor_actual
 
 
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = ConsolaMaestraSupuestos(root)
-    root.lift()
-    root.focus_force()
-    root.mainloop()
+def _parse_float(txt, default_val):
+    try:
+        return float(str(txt).strip().replace(",", "."))
+    except Exception:
+        return default_val
+
+
+def _parse_int(txt, default_val):
+    try:
+        return max(1, int(float(str(txt).strip().replace(",", "."))))
+    except Exception:
+        return default_val
+
+
+# SECCIÓN 1
+st.markdown("<div class='sec-header'>1. PARÁMETROS GENERALES Y TASAS DE DESCUENTO</div>", unsafe_allow_html=True)
+cfg["NOMBRE_PROYECTO"] = fila_3_columnas("NOM", "Nombre del Proyecto:", cfg["NOMBRE_PROYECTO"], "(Nombre oficial que saldrá en la portada de la ULagos y en las conclusiones automáticas del Word)", es_texto=True)
+cfg["APELLIDOS_ENTREGA"] = fila_3_columnas("APE", "Apellidos Carpeta y ZIP:", cfg["APELLIDOS_ENTREGA"], "(Nombre exacto para la carpeta, el Word, el PDF y el archivo comprimido ZIP de entrega)", es_texto=True)
+cfg["INTEGRANTES"] = fila_3_columnas("INT", "Integrantes del Grupo:", cfg["INTEGRANTES"], "(Nombres completos en mayúsculas separados por coma para el bloque PROPUESTO POR de la portada)", es_texto=True)
+cfg["DOCENTE"] = fila_3_columnas("DOC", "Nombre Docente:", cfg["DOCENTE"], "(Nombre de la profesora guía del módulo Evaluación Integrada de Proyectos)", es_texto=True)
+cfg["HORIZONTE_ANIOS"] = fila_3_columnas("HOR", "Horizonte de Evaluación:", cfg["HORIZONTE_ANIOS"], "(Cantidad de años a proyectar en las tablas. La pauta exige evaluar a 10 años -> deja 10)", es_entero=True)
+cfg["IVA"] = fila_3_columnas("IVA", "Tasa de IVA (Impuesto al Valor Agregado):", cfg["IVA"], "(En Chile el IVA legal es 19% -> escribe 0.19. El programa lo usa para descontar el IVA automáticamente)")
+cfg["IMPUESTO_RENTA"] = fila_3_columnas("IMP", "Impuesto a la Renta (1ª Categoría SII):", cfg["IMPUESTO_RENTA"], "(Impuesto sobre las ganancias de la empresa: usa 0.25 para Pyme [25%]. Solo se cobra en el Flujo Privado)")
+cfg["TASA_DESCUENTO_PRIVADA"] = fila_3_columnas("TDP", "Tasa de Descuento Privada (Costo de Capital):", cfg["TASA_DESCUENTO_PRIVADA"], "(Rentabilidad mínima anual que exige el dueño/inversionista para calcular el VAN Privado: ej. 0.12 = 12%)")
+cfg["TASA_DESCUENTO_SOCIAL"] = fila_3_columnas("TDS", "Tasa Social de Descuento (MIDESO / SNI):", cfg["TASA_DESCUENTO_SOCIAL"], "(Tasa exigida por el Estado para calcular el VANS: usa 0.06 [6%] o 0.055 [5,5% oficial vigente SNI 2026])")
+cfg["DIAS_DESFASE_CT"] = fila_3_columnas("DCT", "Días de Desfase para Capital de Trabajo:", cfg["DIAS_DESFASE_CT"], "(Días que la planta debe operar pagando sueldos e insumos antes de cobrar las primeras facturas. Ej: 45 días)", es_entero=True)
+
+# SECCIÓN 2
+st.markdown("<div class='sec-header'>2. FACTORES DE CORRECCIÓN SOCIAL (PRECIOS SOMBRA SNI / MIDESO - PUNTO 8)</div>", unsafe_allow_html=True)
+cfg["FC_MOC"] = fila_3_columnas("MOC", "Factor Mano de Obra Calificada (MOC):", cfg["FC_MOC"], "(Para profesionales/jefes. MIDESO usa 1.00 en caso base o 0.97 según Precios Sociales SNI 2026)")
+cfg["FC_MOSC"] = fila_3_columnas("MOSC", "Factor Mano de Obra Semicalificada (MOSC):", cfg["FC_MOSC"], "(Para técnicos/operadores de máquinas. MIDESO usa 0.85 en caso base o 0.95 según Precios Sociales SNI 2026)")
+cfg["FC_MONC"] = fila_3_columnas("MONC", "Factor Mano de Obra No Calificada (MONC):", cfg["FC_MONC"], "(Para recolectores/ayudantes. MIDESO usa 0.68 en caso base o 0.91 según Precios Sociales SNI 2026)")
+cfg["FC_DIVISA"] = fila_3_columnas("DIV", "Factor Social de la Divisa (Dólar/Importados):", cfg["FC_DIVISA"], "(Premio social a la divisa de MIDESO = 1.01 [o 1.00 en SNI 2026]. Ajusta el valor de máquinas importadas)")
+cfg["ARANCEL_IMP"] = fila_3_columnas("ARA", "Arancel Aduanero de Importación:", cfg["ARANCEL_IMP"], "(Impuesto de aduana en Chile = 6% -> escribe 0.06. En el Flujo Social el programa lo quita porque es impuesto interno)")
+
+# SECCIÓN 3
+st.markdown("<div class='sec-header'>3. DEMANDA, PRODUCTOS E INGRESOS (PUNTOS 4, 5.a y 5.d)</div>", unsafe_allow_html=True)
+cfg["RESIDUO_TON_ANIO_1"] = fila_3_columnas("TON", "Cartón Recolectado el Año 1 (Toneladas):", cfg["RESIDUO_TON_ANIO_1"], "(Toneladas de cartón limpio captadas en Osorno el primer año. Ej: 15.0 ton/año = 50 kg/día)")
+cfg["TASA_CRECIMIENTO"] = fila_3_columnas("CRE", "Tasa de Crecimiento Anual (Años 2 al 10):", cfg["TASA_CRECIMIENTO"], "(Ritmo al que crecen cada año las ventas y la recolección de cartón. Ej: escribe 0.05 para subir 5% anual)")
+cfg["P1_NOMBRE"] = fila_3_columnas("P1N", "Nombre Producto Línea 1:", cfg["P1_NOMBRE"], "(Nombre comercial de tu primera línea de productos para colegios y jardines infantiles)", es_texto=True)
+cfg["P1_UNIDADES"] = fila_3_columnas("P1U", "Unidades Vendidas Año 1 - Línea 1:", cfg["P1_UNIDADES"], "(Cantidad de unidades de la Línea 1 vendidas en todo el primer año. Ej: 3000 unidades/año)", es_entero=True)
+cfg["P1_PRECIO_BRUTO"] = fila_3_columnas("P1P", "Precio de Venta CON IVA - Línea 1 ($):", cfg["P1_PRECIO_BRUTO"], "(Precio al que vendes cada unidad con IVA incluido. Ej: 16000 pesos. El programa lo divide por 1.19 solo)")
+cfg["P1_KG_CARTON"] = fila_3_columnas("P1K", "Kg de Cartón por Unidad - Línea 1:", cfg["P1_KG_CARTON"], "(Kilos de cartón que se necesitan para fabricar 1 unidad de la Línea 1. Ej: 2.5 kg por set)")
+cfg["P2_NOMBRE"] = fila_3_columnas("P2N", "Nombre Producto Línea 2:", cfg["P2_NOMBRE"], "(Nombre comercial de tu segunda línea enfocada en centros de adulto mayor y estimulación cognitiva)", es_texto=True)
+cfg["P2_UNIDADES"] = fila_3_columnas("P2U", "Unidades Vendidas Año 1 - Línea 2:", cfg["P2_UNIDADES"], "(Cantidad de unidades de la Línea 2 vendidas en todo el primer año. Ej: 1500 unidades/año)", es_entero=True)
+cfg["P2_PRECIO_BRUTO"] = fila_3_columnas("P2P", "Precio de Venta CON IVA - Línea 2 ($):", cfg["P2_PRECIO_BRUTO"], "(Precio al que vendes cada unidad con IVA incluido. Ej: 19000 pesos. El programa le quita el 19% de IVA solo)")
+cfg["P2_KG_CARTON"] = fila_3_columnas("P2K", "Kg de Cartón por Unidad - Línea 2:", cfg["P2_KG_CARTON"], "(Kilos de cartón necesarios para fabricar 1 unidad de la Línea 2. Ej: 2.0 kg por juego)")
+
+# SECCIÓN 4
+st.markdown("<div class='sec-header'>4. BENEFICIOS SOCIALES EXTERNOS (LIBERACIÓN DE RECURSOS - PUNTO 8)</div>", unsafe_allow_html=True)
+cfg["AHORRO_MUNI_TON"] = fila_3_columnas("AHM", "Ahorro Municipal por Tonelada Desviada ($):", cfg["AHORRO_MUNI_TON"], "(Dinero que ahorra la Municipalidad de Osorno en camiones y Vertedero de Curaco por cada tonelada reciclada: ej. 48000)")
+cfg["OTROS_BEN_SOC_ANUAL"] = fila_3_columnas("OTB", "Otros Beneficios Sociales Anuales ($):", cfg["OTROS_BEN_SOC_ANUAL"], "(Valor anual en pesos de beneficios extra para la comuna: pon 2500000 o 0 si aplicas criterio conservador SNI 2026)")
+
+# ==============================================================================
+# SECCIÓN 5: INVERSIONES EN ACTIVOS FIJOS (CON BOTONES + AGREGAR Y 🗑️ QUITAR)
+# ==============================================================================
+st.markdown("<div class='sec-header'>5. INVERSIONES EN ACTIVOS FIJOS CON IVA (PUNTO 5.b — PUEDES AGREGAR O QUITAR ÍTEMS)</div>", unsafe_allow_html=True)
+
+h_inv1, h_inv2, h_inv3, h_inv4, h_inv5 = st.columns([2.6, 1.3, 0.9, 1.1, 0.5])
+h_inv1.markdown("<div class='lbl-col'>Nombre de la Máquina / Inversión</div>", unsafe_allow_html=True)
+h_inv2.markdown("<div class='lbl-col'>Monto c/IVA ($)</div>", unsafe_allow_html=True)
+h_inv3.markdown("<div class='lbl-col'>Vida Útil (Años)</div>", unsafe_allow_html=True)
+h_inv4.markdown("<div class='lbl-col'>Origen</div>", unsafe_allow_html=True)
+h_inv5.markdown("<div class='lbl-col'>Quitar</div>", unsafe_allow_html=True)
+
+idx_borrar_inv = None
+for idx, inv in enumerate(cfg["INVERSIONES_LISTA"]):
+    c1, c2, c3, c4, c5 = st.columns([2.6, 1.3, 0.9, 1.1, 0.5])
+    inv["item"] = c1.text_input("Ítem", value=str(inv["item"]), key=f"dyn_inv_nom_{idx}_{len(cfg['INVERSIONES_LISTA'])}", label_visibility="collapsed")
+    m_txt = c2.text_input("Monto", value=str(inv["monto_bruto"]), key=f"dyn_inv_mon_{idx}_{len(cfg['INVERSIONES_LISTA'])}", label_visibility="collapsed")
+    inv["monto_bruto"] = _parse_float(m_txt, inv["monto_bruto"])
+    v_txt = c3.text_input("Vida", value=str(inv["vida_util_economica"]), key=f"dyn_inv_vid_{idx}_{len(cfg['INVERSIONES_LISTA'])}", label_visibility="collapsed")
+    vida_int = _parse_int(v_txt, inv["vida_util_economica"])
+    inv["vida_util_economica"] = vida_int
+    inv["vida_util_contable"] = min(vida_int, 10)
+    inv["origen"] = c4.selectbox(
+        "Origen", options=["Nacional", "Importado"],
+        index=0 if str(inv.get("origen", "Nacional")).lower() == "nacional" else 1,
+        key=f"dyn_inv_ori_{idx}_{len(cfg['INVERSIONES_LISTA'])}", label_visibility="collapsed"
+    )
+    if c5.button("🗑️", key=f"del_inv_{idx}", help="Eliminar esta inversión") and len(cfg["INVERSIONES_LISTA"]) > 1:
+        idx_borrar_inv = idx
+
+if idx_borrar_inv is not None:
+    cfg["INVERSIONES_LISTA"].pop(idx_borrar_inv)
+    st.rerun()
+
+if st.button("➕ Agregar Nueva Máquina / Inversión en Activo Fijo"):
+    cfg["INVERSIONES_LISTA"].append({
+        "item": f"Nuevo Equipo o Acondicionamiento #{len(cfg['INVERSIONES_LISTA']) + 1}",
+        "monto_bruto": 1000000,
+        "vida_util_contable": 5,
+        "vida_util_economica": 5,
+        "valor_residual_pct": 0.05,
+        "origen": "Nacional",
+    })
+    st.rerun()
+
+# ==============================================================================
+# SECCIÓN 6: COSTOS OPERATIVOS VARIABLES Y FIJOS (CON + AGREGAR Y 🗑️ QUITAR)
+# ==============================================================================
+st.markdown("<div class='sec-header'>6. COSTOS OPERATIVOS VARIABLES Y FIJOS (PUNTO 5.c — PUEDES AGREGAR O QUITAR ÍTEMS)</div>", unsafe_allow_html=True)
+
+st.markdown("<div class='sub-header'>6.A Costos Variables (Por Unidad Fabricada o Por Tonelada Recolectada)</div>", unsafe_allow_html=True)
+h_cv1, h_cv2, h_cv3, h_cv4, h_cv5 = st.columns([2.6, 1.3, 1.2, 0.8, 0.5])
+h_cv1.markdown("<div class='lbl-col'>Descripción del Costo Variable</div>", unsafe_allow_html=True)
+h_cv2.markdown("<div class='lbl-col'>Costo c/IVA ($)</div>", unsafe_allow_html=True)
+h_cv3.markdown("<div class='lbl-col'>Base de Cálculo</div>", unsafe_allow_html=True)
+h_cv4.markdown("<div class='lbl-col'>Origen</div>", unsafe_allow_html=True)
+h_cv5.markdown("<div class='lbl-col'>Quitar</div>", unsafe_allow_html=True)
+
+idx_borrar_cv = None
+for idx, cv in enumerate(cfg["COSTOS_VAR_LISTA"]):
+    c1, c2, c3, c4, c5 = st.columns([2.6, 1.3, 1.2, 0.8, 0.5])
+    cv["item"] = c1.text_input("Ítem CV", value=str(cv["item"]), key=f"dyn_cv_nom_{idx}_{len(cfg['COSTOS_VAR_LISTA'])}", label_visibility="collapsed")
+    c_txt = c2.text_input("Monto CV", value=str(cv["costo"]), key=f"dyn_cv_mon_{idx}_{len(cfg['COSTOS_VAR_LISTA'])}", label_visibility="collapsed")
+    cv["costo"] = _parse_float(c_txt, cv["costo"])
+    cv["base"] = c3.selectbox(
+        "Base", options=["Por Unidad", "Por Tonelada"],
+        index=0 if cv.get("base", "Por Unidad") == "Por Unidad" else 1,
+        key=f"dyn_cv_bas_{idx}_{len(cfg['COSTOS_VAR_LISTA'])}", label_visibility="collapsed"
+    )
+    cv["origen"] = c4.selectbox(
+        "Origen CV", options=["Nacional", "Importado"],
+        index=0 if str(cv.get("origen", "Nacional")).lower() == "nacional" else 1,
+        key=f"dyn_cv_ori_{idx}_{len(cfg['COSTOS_VAR_LISTA'])}", label_visibility="collapsed"
+    )
+    if c5.button("🗑️", key=f"del_cv_{idx}", help="Eliminar este costo variable") and len(cfg["COSTOS_VAR_LISTA"]) > 1:
+        idx_borrar_cv = idx
+
+if idx_borrar_cv is not None:
+    cfg["COSTOS_VAR_LISTA"].pop(idx_borrar_cv)
+    st.rerun()
+
+if st.button("➕ Agregar Nuevo Costo Variable"):
+    cfg["COSTOS_VAR_LISTA"].append({
+        "item": f"Nuevo Insumo o Costo Variable #{len(cfg['COSTOS_VAR_LISTA']) + 1}",
+        "costo": 500,
+        "base": "Por Unidad",
+        "origen": "Nacional",
+    })
+    st.rerun()
+
+st.markdown("<div class='sub-header'>6.B Gastos Fijos Mensuales del Taller en Ovejería</div>", unsafe_allow_html=True)
+h_cf1, h_cf2, h_cf3, h_cf4 = st.columns([3.2, 1.5, 1.2, 0.5])
+h_cf1.markdown("<div class='lbl-col'>Descripción del Gasto Fijo Mensual</div>", unsafe_allow_html=True)
+h_cf2.markdown("<div class='lbl-col'>Valor Mensual ($)</div>", unsafe_allow_html=True)
+h_cf3.markdown("<div class='lbl-col'>Régimen IVA</div>", unsafe_allow_html=True)
+h_cf4.markdown("<div class='lbl-col'>Quitar</div>", unsafe_allow_html=True)
+
+idx_borrar_cf = None
+for idx, cf in enumerate(cfg["COSTOS_FIJOS_LISTA"]):
+    c1, c2, c3, c4 = st.columns([3.2, 1.5, 1.2, 0.5])
+    cf["item"] = c1.text_input("Ítem CF", value=str(cf["item"]), key=f"dyn_cf_nom_{idx}_{len(cfg['COSTOS_FIJOS_LISTA'])}", label_visibility="collapsed")
+    cf_txt = c2.text_input("Mensual CF", value=str(cf["mensual"]), key=f"dyn_cf_mon_{idx}_{len(cfg['COSTOS_FIJOS_LISTA'])}", label_visibility="collapsed")
+    cf["mensual"] = _parse_float(cf_txt, cf["mensual"])
+    cf["afecto_iva"] = c3.selectbox(
+        "IVA CF", options=["Exento", "Con IVA"],
+        index=0 if cf.get("afecto_iva", "Exento") == "Exento" else 1,
+        key=f"dyn_cf_iva_{idx}_{len(cfg['COSTOS_FIJOS_LISTA'])}", label_visibility="collapsed"
+    )
+    if c4.button("🗑️", key=f"del_cf_{idx}", help="Eliminar este gasto fijo") and len(cfg["COSTOS_FIJOS_LISTA"]) > 1:
+        idx_borrar_cf = idx
+
+if idx_borrar_cf is not None:
+    cfg["COSTOS_FIJOS_LISTA"].pop(idx_borrar_cf)
+    st.rerun()
+
+if st.button("➕ Agregar Nuevo Gasto Fijo Mensual"):
+    cfg["COSTOS_FIJOS_LISTA"].append({
+        "item": f"Nuevo Gasto Fijo Mensual #{len(cfg['COSTOS_FIJOS_LISTA']) + 1}",
+        "mensual": 100000,
+        "afecto_iva": "Con IVA",
+    })
+    st.rerun()
+
+# ==============================================================================
+# SECCIÓN 7: DOTACIÓN DE PERSONAL Y SUELDOS (CON + AGREGAR Y 🗑️ QUITAR)
+# ==============================================================================
+st.markdown("<div class='sec-header'>7. DOTACIÓN DE PERSONAL Y SUELDOS MENSUALES (PUNTO 4.3 — PUEDES AGREGAR O QUITAR CARGOS)</div>", unsafe_allow_html=True)
+
+h_p1, h_p2, h_p3, h_p4, h_p5, h_p6 = st.columns([2.2, 0.7, 0.9, 1.2, 1.9, 0.5])
+h_p1.markdown("<div class='lbl-col'>Cargo / Puesto en Planta</div>", unsafe_allow_html=True)
+h_p2.markdown("<div class='lbl-col'>Cant.</div>", unsafe_allow_html=True)
+h_p3.markdown("<div class='lbl-col'>Calif. SNI</div>", unsafe_allow_html=True)
+h_p4.markdown("<div class='lbl-col'>Sueldo Mensual ($)</div>", unsafe_allow_html=True)
+h_p5.markdown("<div class='lbl-col'>Tareas Principales</div>", unsafe_allow_html=True)
+h_p6.markdown("<div class='lbl-col'>Quitar</div>", unsafe_allow_html=True)
+
+idx_borrar_pers = None
+opciones_sni = ["MOC", "MOSC", "MONC"]
+for idx, p_item in enumerate(cfg["PERSONAL_LISTA"]):
+    c1, c2, c3, c4, c5, c6 = st.columns([2.2, 0.7, 0.9, 1.2, 1.9, 0.5])
+    p_item["cargo"] = c1.text_input("Cargo", value=str(p_item["cargo"]), key=f"dyn_pe_car_{idx}_{len(cfg['PERSONAL_LISTA'])}", label_visibility="collapsed")
+    cant_txt = c2.text_input("Cant", value=str(p_item["cantidad"]), key=f"dyn_pe_can_{idx}_{len(cfg['PERSONAL_LISTA'])}", label_visibility="collapsed")
+    p_item["cantidad"] = _parse_int(cant_txt, p_item["cantidad"])
+    cal_actual = p_item.get("calificacion", "MONC")
+    p_item["calificacion"] = c3.selectbox(
+        "SNI", options=opciones_sni,
+        index=opciones_sni.index(cal_actual) if cal_actual in opciones_sni else 2,
+        key=f"dyn_pe_sni_{idx}_{len(cfg['PERSONAL_LISTA'])}", label_visibility="collapsed"
+    )
+    sue_txt = c4.text_input("Sueldo", value=str(p_item["sueldo_bruto_mensual"]), key=f"dyn_pe_sue_{idx}_{len(cfg['PERSONAL_LISTA'])}", label_visibility="collapsed")
+    p_item["sueldo_bruto_mensual"] = _parse_float(sue_txt, p_item["sueldo_bruto_mensual"])
+    p_item["competencias"] = c5.text_input("Tareas", value=str(p_item.get("competencias", "Operación en planta")), key=f"dyn_pe_com_{idx}_{len(cfg['PERSONAL_LISTA'])}", label_visibility="collapsed")
+    if c6.button("🗑️", key=f"del_pe_{idx}", help="Eliminar este cargo") and len(cfg["PERSONAL_LISTA"]) > 1:
+        idx_borrar_pers = idx
+
+if idx_borrar_pers is not None:
+    cfg["PERSONAL_LISTA"].pop(idx_borrar_pers)
+    st.rerun()
+
+if st.button("➕ Agregar Nuevo Cargo / Trabajador a la Planta"):
+    cfg["PERSONAL_LISTA"].append({
+        "cargo": f"Nuevo Operario / Cargo #{len(cfg['PERSONAL_LISTA']) + 1}",
+        "cantidad": 1,
+        "sueldo_bruto_mensual": 550000,
+        "calificacion": "MONC",
+        "competencias": "Apoyo en producción, logística y control de calidad en Ovejería",
+    })
+    st.rerun()
+
+# Recalcular motor en vivo con las casillas y listas actuales
+res_vivo = mod2.ejecutar_motor_financiero(cfg)
+m = res_vivo["metricas"]
+tp = cfg["TASA_DESCUENTO_PRIVADA"] * 100
+ts = cfg["TASA_DESCUENTO_SOCIAL"] * 100
+
+banner_placeholder.markdown(
+    f"""
+    <div style="background-color:#0F172A;padding:14px 22px;border-radius:8px;margin-bottom:10px;">
+        <div style="color:#FFFFFF;font-weight:700;font-size:15px;margin-bottom:6px;">
+            PANEL INTERACTIVO DE SUPUESTOS Y SIMULACIÓN EN VIVO (PAUTA 10 PUNTOS ULAGOS)
+        </div>
+        <div style="color:#38BDF8;font-family:Consolas,monospace;font-weight:700;font-size:14px;">
+            &gt; PRIVADO ({tp:.1f}%): &nbsp;VAN = {mod2.fmt_clp(m['van_privado'])} &nbsp;&nbsp;|&nbsp;&nbsp; TIR = {m['tir_privada']:.2f}% &nbsp;&nbsp;|&nbsp;&nbsp; Payback = {m['payback_privado']} años
+        </div>
+        <div style="color:#4ADE80;font-family:Consolas,monospace;font-weight:700;font-size:14px;margin-top:3px;">
+            &gt; SOCIAL &nbsp;({ts:.1f}%): &nbsp;VANS = {mod2.fmt_clp(m['van_social'])} &nbsp;&nbsp;|&nbsp;&nbsp; TIRS = {m['tir_social']:.2f}% &nbsp;&nbsp;|&nbsp;&nbsp; Payback = {m['payback_social']} años
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.divider()
+
+b_izq, b_der = st.columns(2)
+if b_izq.button("🔄 RECALCULAR VAN / TIR EN VIVO", use_container_width=True):
+    st.toast("VAN y TIR recalculados en el panel superior.", icon="✅")
+
+if b_der.button("🚀 GENERAR ENTREGA COMPLETA (WORD + PDF + 3 EXCELS EN .ZIP)", type="primary", use_container_width=True):
+    with st.spinner("Ejecutando Scripts 2 + 3 con tus ítems personalizados y empaquetando ZIP..."):
+        dir_temp = tempfile.mkdtemp()
+        info = generar_entrega_completa_en_servidor(cfg, dir_temp)
+        with open(info["ruta_zip"], "rb") as fz:
+            st.session_state["ultimo_zip_bytes"] = fz.read()
+            st.session_state["ultimo_zip_nombre"] = os.path.basename(info["ruta_zip"])
+
+if "ultimo_zip_bytes" in st.session_state:
+    st.success(f"¡Paquete '{st.session_state['ultimo_zip_nombre']}' generado con tus cifras actuales!")
+    st.download_button(
+        label=f"📥 HAZ CLIC AQUÍ PARA DESCARGAR {st.session_state['ultimo_zip_nombre']}",
+        data=st.session_state["ultimo_zip_bytes"],
+        file_name=st.session_state["ultimo_zip_nombre"],
+        mime="application/zip",
+        use_container_width=True,
+    )

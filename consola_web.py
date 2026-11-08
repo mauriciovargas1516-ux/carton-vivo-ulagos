@@ -3,6 +3,7 @@
 consola_web.py — CONSOLA WEB INTERACTIVA ULAGOS (CON PORTADA INSTITUCIONAL + APA 7 + ESTILO OLIVER)
 - Aplica automáticamente 'plantilla_hoja_carta_institucional_BLANCO.docx' (portada oficial ULagos, encabezado en páginas interiores y contraportada).
 - Cambia 'EQUIPO FORMULADOR (INTEGRANTES):' por 'INTEGRANTES:' en la portada conservando intactos los nombres.
+- Quita de la portada el párrafo recargado en cursiva y elimina los '#' de numeración de calle (#446 al #1024) en textos y tablas.
 - Elimina por completo la Matriz de Cumplimiento de la Pauta y el cuadro de los 10 puntos.
 - Formatea la sección de 'Bibliografía' en norma APA 7ª edición (orden alfabético, sangría francesa de 1,27 cm y títulos en cursiva).
 - Mantiene intactos los Anexos 1, 2, 3 y 4 y evita cualquier error de copia de archivos en Streamlit Cloud.
@@ -512,9 +513,10 @@ def _reemplazar_integrantes_en_parrafo(p):
 
 def _limpiar_titulos_y_portada(doc):
     """
-    1) Cambia 'EQUIPO FORMULADOR (INTEGRANTES):' por 'INTEGRANTES:' en la portada (párrafos y tablas).
-    2) Elimina etiquetas meta de la pauta ('(PUNTO 7)', '(PUNTO 9 PAUTA)', etc.).
-    3) Activa keep_with_next en títulos de secciones y anexos.
+    1) Elimina el subtítulo recargado en cursiva de la portada ('Estudio a 10 años basado en 6 locales... (#446 al #1024...)').
+    2) Cambia 'EQUIPO FORMULADOR (INTEGRANTES):' por 'INTEGRANTES:' en la portada (párrafos y tablas).
+    3) Elimina etiquetas meta de la pauta ('(PUNTO 7)', etc.) y limpia los '#' de numeración de calle en textos y tablas.
+    4) Activa keep_with_next en títulos de secciones y anexos.
     """
     reemplazos_titulos = [
         (" (PUNTO 4.3)", ""),
@@ -527,6 +529,13 @@ def _limpiar_titulos_y_portada(doc):
     ]
     for idx_p, p in enumerate(doc.paragraphs):
         txt = p.text.strip()
+
+        # 1. Quitar de la portada el párrafo en cursiva con '(#446 al #1024, retiro antes del camión...)'
+        if idx_p < 25 and txt.startswith("Estudio a 10 años basado en 6 locales"):
+            p._element.getparent().remove(p._element)
+            continue
+
+        # 2. Cambiar EQUIPO FORMULADOR (INTEGRANTES): por INTEGRANTES:
         if idx_p < 35 and "EQUIPO FORMULADOR" in txt.upper():
             _reemplazar_integrantes_en_parrafo(p)
             continue
@@ -537,6 +546,12 @@ def _limpiar_titulos_y_portada(doc):
             if viejo in txt_orig:
                 txt_orig = txt_orig.replace(viejo, nuevo)
                 modificado = True
+
+        # 3. Limpiar referencias a '(#446 al #1024)' o '(entre los números #446 y #1024)' en párrafos
+        if "(#446 al #1024)" in txt_orig or "números #446 y #1024" in txt_orig:
+            txt_orig = txt_orig.replace(" (#446 al #1024)", "").replace(" (entre los números #446 y #1024)", "")
+            modificado = True
+
         if modificado:
             if _es_linea_toc(p):
                 for t_el in p._p.findall(".//" + qn("w:t")):
@@ -544,17 +559,27 @@ def _limpiar_titulos_y_portada(doc):
                         for viejo, nuevo in reemplazos_titulos:
                             t_el.text = t_el.text.replace(viejo, nuevo)
             else:
-                _reemplazar_texto_parrafo_conservando_formato(p, txt_orig, size_pt=11.5, bold=True)
+                es_titulo = bool(re.match(r"^\d+\.", txt) or txt.upper().startswith("ANEXO "))
+                _reemplazar_texto_parrafo_conservando_formato(
+                    p, txt_orig, size_pt=11.5 if es_titulo else 10.5, bold=es_titulo
+                )
 
         if not _es_linea_toc(p) and (txt.upper().startswith("ANEXO ") or re.match(r"^\d+\.", txt)):
             p.paragraph_format.keep_with_next = True
 
-    for tbl in doc.tables[:2]:
+    # 4. Limpiar '#' de numeraciones de calle en todas las tablas (Tabla 1.1, Anexo 3, etc.)
+    for tbl in doc.tables:
         for row in tbl.rows:
             for cell in row.cells:
                 for p in cell.paragraphs:
                     if "EQUIPO FORMULADOR" in p.text.upper():
                         _reemplazar_integrantes_en_parrafo(p)
+                    elif "#" in p.text:
+                        for r in p.runs:
+                            if "#" in r.text:
+                                r.text = r.text.replace(" (#446 al #1024)", "")
+                                r.text = re.sub(r"\(#\d+\)", "", r.text)
+                                r.text = re.sub(r"#(\d+)", r"\1", r.text)
 
 
 def _aplicar_redaccion_e_interpretaciones_oliver_en_word(ruta_word, resultados_vivos, cfg_vivo):
@@ -602,8 +627,8 @@ def _aplicar_redaccion_e_interpretaciones_oliver_en_word(ruta_word, resultados_v
         )
         txt_res_2 = (
             f"Para trabajar con números reales y fáciles de comprobar en terreno, nuestro proyecto recoge el cartón de 6 locales "
-            f"comerciales ubicados en calle Eleuterio Ramírez: Hojalatería Lynch (#446), Autoplanet (#582), Zapatería La Malagueña (#625), "
-            f"Minimarket El Sabrosón (#647), Galería Centrosorno (#977) y Liquimax (#1024). El furgón contratado por “{cfg_vivo['NOMBRE_PROYECTO']}” "
+            f"comerciales ubicados en calle Eleuterio Ramírez: Hojalatería Lynch, Autoplanet, Zapatería La Malagueña, "
+            f"Minimarket El Sabrosón, Galería Centrosorno y Liquimax. El furgón contratado por “{cfg_vivo['NOMBRE_PROYECTO']}” "
             f"pasa previo al camión recolector de basura municipal, aproximadamente entre las 05:30 y 06:00 AM, logrando retirar "
             f"50 kilos diarios de cartón limpio, lo que se traduce en 1.250 kilos mensuales al recolectar 25 días hábiles por mes, "
             f"equivalentes exactamente a {mod2.fmt_dec_cl(ton_a1, 2)} toneladas ({_fmt_int_local(kilos_a1)} kilos) en el Año 1."
@@ -650,7 +675,7 @@ def _aplicar_redaccion_e_interpretaciones_oliver_en_word(ruta_word, resultados_v
                 )
                 _reemplazar_texto_parrafo_conservando_formato(
                     doc.paragraphs[i + 2],
-                    "Se salió a terreno en calle Eleuterio Ramírez (entre los números #446 y #1024), lo cual permitió catastrar y comprometer "
+                    "Se salió a terreno en el eje comercial de calle Eleuterio Ramírez, lo cual permitió catastrar y comprometer "
                     "a 6 locales comerciales reales que entregan en conjunto 50 kilos de cartón limpio por día trabajado (de lunes a sábado). "
                     "Esto representa un flujo comprobable de 1.250 kilos por mes en 25 días hábiles, acumulando un total exacto de 15,00 toneladas "
                     "al año en el Año 1. El detalle de cada local catastrado se presenta en la Tabla 1.1:"
@@ -787,6 +812,8 @@ def _transformar_excels_estilo_oliver(rutas_excels):
             for r_idx in range(1, sheet.max_row + 1):
                 for c_idx in range(1, sheet.max_column + 1):
                     cell = sheet.cell(row=r_idx, column=c_idx)
+                    if isinstance(cell.value, str) and "#" in cell.value:
+                        cell.value = re.sub(r"#(\d+)", r"\1", cell.value.replace(" (#446 al #1024)", ""))
                     if r_idx == 1:
                         cell.fill = fill_blanco
                         cell.font = font_titulo

@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-consola_web.py.py — CONSOLA WEB INTERACTIVA ULAGOS (SIN EMOJIS + BOTONES VISIBLES)
+consola_web.py.py — CONSOLA WEB INTERACTIVA ULAGOS (SIN EMOJIS + BOTONES VISIBLES + FIX AUTÓNOMO)
 - Reemplaza únicamente este archivo en tu GitHub ('consola_web.py.py' o 'consola_web.py') sin tocar los demás scripts.
-- Corrige el margen superior para que los 3 botones de carga rápida se vean completos debajo del panel negro.
+- Incluye internamente '_estilizar_run_local' y '_fmt_int_local' para evitar cualquier AttributeError con mod2.
 - Integra el "Modo Estudiante Natural (Aporte de Oliver)":
-  1) Incorpora la redacción de Oliver en Resumen Ejecutivo, Problemática y Productos (corrigiendo los 'XXX' y kilos).
+  1) Incorpora la redacción de Oliver en Resumen Ejecutivo y Problemática (corrigiendo los 'XXX' y kilos).
   2) Agrega párrafos de interpretación económica y financiera al pie de cada tabla clave.
   3) Cambia el diseño de las 26 tablas del Word y de los 3 libros Excel a un estilo universitario clásico.
   4) Repara automáticamente el Índice de la Página 2.
@@ -92,6 +92,28 @@ def _es_linea_toc(p):
     return len(p._p.findall(qn("w:hyperlink"))) > 0 or len(p._p.findall(qn("w:fldSimple"))) > 0
 
 
+def _estilizar_run_local(run, size_pt=10.5, bold=False, italic=False, color_rgb=(0, 0, 0)):
+    run.font.name = "Arial"
+    run.font.size = Pt(size_pt)
+    run.font.bold = bold
+    run.font.italic = italic
+    run.font.color.rgb = RGBColor(*color_rgb)
+    rPr = run._r.get_or_add_rPr()
+    rFonts = rPr.find(qn("w:rFonts"))
+    if rFonts is None:
+        rFonts = OxmlElement("w:rFonts")
+        rPr.append(rFonts)
+    rFonts.set(qn("w:ascii"), "Arial")
+    rFonts.set(qn("w:hAnsi"), "Arial")
+    rFonts.set(qn("w:cs"), "Arial")
+    if rPr.find(qn("w:noProof")) is None:
+        rPr.append(OxmlElement("w:noProof"))
+
+
+def _fmt_int_local(valor):
+    return f"{int(round(float(valor))):,}".replace(",", ".")
+
+
 def _crear_parrafo_interpretacion(doc, titulo_negrita, texto_cuerpo):
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
@@ -100,10 +122,10 @@ def _crear_parrafo_interpretacion(doc, titulo_negrita, texto_cuerpo):
     p.paragraph_format.line_spacing = 1.15
 
     r_tit = p.add_run(titulo_negrita + " ")
-    mod2._estilizar_run_arial(r_tit, size_pt=10.5, bold=True, color_rgb=(0, 0, 0))
+    _estilizar_run_local(r_tit, size_pt=10.5, bold=True, color_rgb=(0, 0, 0))
 
     r_txt = p.add_run(texto_cuerpo)
-    mod2._estilizar_run_arial(r_txt, size_pt=10.5, bold=False, color_rgb=(0, 0, 0))
+    _estilizar_run_local(r_txt, size_pt=10.5, bold=False, color_rgb=(0, 0, 0))
     return p
 
 
@@ -111,7 +133,7 @@ def _reemplazar_texto_parrafo_conservando_formato(p, nuevo_texto, size_pt=10.5, 
     for r in list(p.runs):
         p._p.remove(r._r)
     r_nuevo = p.add_run(nuevo_texto)
-    mod2._estilizar_run_arial(r_nuevo, size_pt=size_pt, bold=bold, color_rgb=(0, 0, 0))
+    _estilizar_run_local(r_nuevo, size_pt=size_pt, bold=bold, color_rgb=(0, 0, 0))
 
 
 def _transformar_tablas_word_estilo_estudiante(doc):
@@ -232,19 +254,19 @@ def _aplicar_redaccion_e_interpretaciones_oliver_en_word(ruta_word, resultados_v
             f"Minimarket El Sabrosón (#647), Galería Centrosorno (#977) y Liquimax (#1024). El furgón contratado por “{cfg_vivo['NOMBRE_PROYECTO']}” "
             f"pasa previo al camión recolector de basura municipal, aproximadamente entre las 05:30 y 06:00 AM, logrando retirar "
             f"50 kilos diarios de cartón limpio, lo que se traduce en 1.250 kilos mensuales al recolectar 25 días hábiles por mes, "
-            f"equivalentes exactamente a {mod2.fmt_dec_cl(ton_a1, 2)} toneladas ({mod2.fmt_int_cl(kilos_a1)} kilos) en el Año 1."
+            f"equivalentes exactamente a {mod2.fmt_dec_cl(ton_a1, 2)} toneladas ({_fmt_int_local(kilos_a1)} kilos) en el Año 1."
         )
         txt_res_3 = (
-            f"Considerando los {mod2.fmt_int_cl(kilos_a1)} kilos anuales recolectados, el 70% ({mod2.fmt_int_cl(kilos_util)} kilos = "
+            f"Considerando los {_fmt_int_local(kilos_a1)} kilos anuales recolectados, el 70% ({_fmt_int_local(kilos_util)} kilos = "
             f"{mod2.fmt_dec_cl(ton_a1 * 0.70, 2)} toneladas) se aprovecha directamente en la elaboración de los productos y el 30% restante "
-            f"({mod2.fmt_int_cl(kilos_merma)} kilos = {mod2.fmt_dec_cl(ton_a1 * 0.30, 2)} toneladas) corresponde a recortes sobrantes y bordes "
-            f"con corchetes o cintas, los cuales se segregan y entregan a reciclaje autorizado. Con los {mod2.fmt_int_cl(kilos_util)} kilos útiles "
+            f"({_fmt_int_local(kilos_merma)} kilos = {mod2.fmt_dec_cl(ton_a1 * 0.30, 2)} toneladas) corresponde a recortes sobrantes y bordes "
+            f"con corchetes o cintas, los cuales se segregan y entregan a reciclaje autorizado. Con los {_fmt_int_local(kilos_util)} kilos útiles "
             f"se fabrican dos productos validados con 3 compradores institucionales directos en Osorno: 1ro, {cfg_vivo['P1_NOMBRE']} "
-            f"({mod2.fmt_int_cl(p1_u)} unidades al año, utilizando {mod2.fmt_dec_cl(p1_kg, 2)} kilos de cartón por unidad, equivalentes a "
-            f"{mod2.fmt_int_cl(int(p1_u * p1_kg))} kilos anuales) a un precio de {mod2.fmt_clp(p1_p)} IVA incluido ({mod2.fmt_clp(p1_neto)} sin IVA), "
+            f"({_fmt_int_local(p1_u)} unidades al año, utilizando {mod2.fmt_dec_cl(p1_kg, 2)} kilos de cartón por unidad, equivalentes a "
+            f"{_fmt_int_local(int(p1_u * p1_kg))} kilos anuales) a un precio de {mod2.fmt_clp(p1_p)} IVA incluido ({mod2.fmt_clp(p1_neto)} sin IVA), "
             f"cuyos compradores son el DAEM de Osorno y jardines infantiles privados; y 2do, {cfg_vivo['P2_NOMBRE']} "
-            f"({mod2.fmt_int_cl(p2_u)} unidades por año, utilizando {mod2.fmt_dec_cl(p2_kg, 2)} kilos de cartón por unidad, equivalentes a "
-            f"{mod2.fmt_int_cl(int(p2_u * p2_kg))} kilos anuales) a un precio de comercialización de {mod2.fmt_clp(p2_p)} IVA incluido "
+            f"({_fmt_int_local(p2_u)} unidades por año, utilizando {mod2.fmt_dec_cl(p2_kg, 2)} kilos de cartón por unidad, equivalentes a "
+            f"{_fmt_int_local(int(p2_u * p2_kg))} kilos anuales) a un precio de comercialización de {mod2.fmt_clp(p2_p)} IVA incluido "
             f"({mod2.fmt_clp(p2_neto)} sin IVA), orientado al Hogar de Ancianos Santa María de Osorno y clubes de adulto mayor."
         )
         txt_res_4 = (
@@ -1126,7 +1148,7 @@ if b_der.button("GENERAR CARPETA DE ENTREGA (.ZIP CON WORD, PDF Y 3 EXCELS)", ty
             st.session_state["ultimo_zip_nombre"] = os.path.basename(info["ruta_zip"])
 
 if "ultimo_zip_bytes" in st.session_state:
-    st.success(f"Paquete '{st.session_state['ultimo_zip_nombre']}' generado con éxito.")
+    st.success(f"¡Paquete '{st.session_state['ultimo_zip_nombre']}' generado con éxito!")
     st.download_button(
         label=f"DESCARGAR ARCHIVO {st.session_state['ultimo_zip_nombre']}",
         data=st.session_state["ultimo_zip_bytes"],

@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-consola_web.py.py — CONSOLA WEB INTERACTIVA ULAGOS (SIN EMOJIS + ESTILO ACADÉMICO LIMPIO)
+consola_web.py.py — CONSOLA WEB INTERACTIVA ULAGOS (SIN EMOJIS + BOTONES VISIBLES)
 - Reemplaza únicamente este archivo en tu GitHub ('consola_web.py.py' o 'consola_web.py') sin tocar los demás scripts.
-- Interfaz limpia sin emojis y con selectores completamente blancos.
+- Corrige el margen superior para que los 3 botones de carga rápida se vean completos debajo del panel negro.
 - Integra el "Modo Estudiante Natural (Aporte de Oliver)":
   1) Incorpora la redacción de Oliver en Resumen Ejecutivo, Problemática y Productos (corrigiendo los 'XXX' y kilos).
-  2) Agrega párrafos de interpretación económica y financiera al pie de cada tabla clave (Inversiones, Costos, CT, Flujo Privado, Flujo Social y Sensibilidad).
-  3) Cambia el diseño de las 26 tablas del Word y de los 3 libros Excel a un estilo universitario clásico (manteniendo todas las fórmulas =SUM, =NPV, =IRR vivas).
-  4) Repara automáticamente el Índice de la Página 2 para que no queden líneas sueltas ni páginas desfasadas.
+  2) Agrega párrafos de interpretación económica y financiera al pie de cada tabla clave.
+  3) Cambia el diseño de las 26 tablas del Word y de los 3 libros Excel a un estilo universitario clásico.
+  4) Repara automáticamente el Índice de la Página 2.
 """
 
 import os
@@ -709,7 +709,7 @@ def generar_entrega_completa_en_servidor(cfg_vivo, directorio_destino, aplicar_e
 
 
 # ==============================================================================
-# 3. INTERFAZ VISUAL EN MODO CLARO FIJO + SIN EMOJIS
+# 3. INTERFAZ VISUAL EN MODO CLARO FIJO + BOTONES VISIBLES Y SIN EMOJIS
 # ==============================================================================
 
 st.set_page_config(page_title="Consola Interactiva ULagos - Cartón Vivo Osorno", layout="wide")
@@ -722,7 +722,7 @@ st.markdown(
         color: #0F172A !important;
     }
     .block-container {
-        padding-top: 1.2rem !important;
+        padding-top: 3.5rem !important;
         padding-bottom: 2.5rem !important;
         max-width: 1240px !important;
     }
@@ -759,9 +759,12 @@ st.markdown(
         padding-top: 7px;
         line-height: 1.35;
     }
+    div[data-baseweb="input"],
     div[data-baseweb="input"] > div,
+    div[data-baseweb="base-input"],
+    div[data-baseweb="select"],
     div[data-baseweb="select"] > div,
-    div[data-baseweb="select"] > div > div {
+    div[data-baseweb="select"] div {
         background-color: #FFFFFF !important;
         color: #0F172A !important;
         border-color: #94A3B8 !important;
@@ -769,6 +772,7 @@ st.markdown(
     div[data-baseweb="select"] svg {
         fill: #0F172A !important;
         color: #0F172A !important;
+        background-color: transparent !important;
     }
     input {
         color: #0F172A !important;
@@ -808,7 +812,9 @@ if "cfg" not in st.session_state:
 
 cfg = st.session_state.cfg
 
-# Botones rápidos de Presets arriba (sin emojis)
+banner_placeholder = st.empty()
+
+# Botones rápidos de Presets debajo del banner para que nunca queden cortados arriba
 col_p1, col_p2, col_p3 = st.columns([1.2, 1.2, 1.2])
 if col_p1.button("Cargar Parámetros SNI 2026 (TSD 5,5%)", use_container_width=True):
     cfg["TASA_DESCUENTO_SOCIAL"] = 0.055
@@ -839,8 +845,6 @@ if col_p3.button("Restaurar Valores por Defecto", use_container_width=True):
         if k.startswith("in_") or k.startswith("dyn_"):
             del st.session_state[k]
     st.rerun()
-
-banner_placeholder = st.empty()
 
 modo_oliver_activo = st.checkbox(
     "Incluir glosas de interpretación financiera y formato clásico universitario en Word y libros Excel",

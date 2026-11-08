@@ -3,8 +3,9 @@
 consola_web.py — CONSOLA WEB INTERACTIVA ULAGOS (CON PORTADA INSTITUCIONAL + APA 7 + ESTILO OLIVER)
 - Aplica automáticamente 'plantilla_hoja_carta_institucional_BLANCO.docx' (portada oficial ULagos, encabezado en páginas interiores y contraportada).
 - Cambia 'EQUIPO FORMULADOR (INTEGRANTES):' por 'INTEGRANTES:' en la portada conservando intactos los nombres.
+- Elimina por completo la Matriz de Cumplimiento de la Pauta y el cuadro de los 10 puntos.
 - Formatea la sección de 'Bibliografía' en norma APA 7ª edición (orden alfabético, sangría francesa de 1,27 cm y títulos en cursiva).
-- Mantiene intactos los Anexos 1, 2, 3 y 4 y actualiza los archivos también en la carpeta local del proyecto.
+- Mantiene intactos los Anexos 1, 2, 3 y 4 y evita cualquier error de copia de archivos en Streamlit Cloud.
 """
 
 import os
@@ -866,7 +867,11 @@ def _crear_entrada_toc_con_puntos(doc, texto_sec, anchor_name, pag_str="20", niv
     return p
 
 
-def _reparar_toc_y_ubicar_matriz_en_cuerpo(ruta_word):
+def _reparar_toc_y_eliminar_matriz_cumplimiento(ruta_word):
+    """
+    Repara la Tabla de Contenido (TOC) y elimina por completo la 'MATRIZ DE CUMPLIMIENTO DE LA PAUTA
+    Y SÍNTESIS DE INDICADORES' y el cuadro de 'Cumplimiento íntegro de los 10 puntos exigidos en la pauta'.
+    """
     doc = mod2.Document(ruta_word)
     body = doc.element.body
 
@@ -881,12 +886,7 @@ def _reparar_toc_y_ubicar_matriz_en_cuerpo(ruta_word):
                 toc_sec1_el = p._p
                 break
 
-    p_sec1_real = None
-    for p in doc.paragraphs:
-        if not _es_linea_toc(p) and p.text.strip().upper().startswith("1. EL PROBLEMA EN OSORNO"):
-            p_sec1_real = p
-            break
-
+    # 1. Eliminar los bloques intrusos insertados entre el TOC de Resumen Ejecutivo y el TOC de Sección 1
     if toc_resumen_el is not None and toc_sec1_el is not None:
         hijos = list(body)
         idx_ini = hijos.index(toc_resumen_el)
@@ -894,16 +894,42 @@ def _reparar_toc_y_ubicar_matriz_en_cuerpo(ruta_word):
         intrusos = hijos[idx_ini + 1:idx_fin]
         for el in intrusos:
             body.remove(el)
-            if p_sec1_real is not None:
-                p_sec1_real._p.addprevious(el)
+
+    # 2. Eliminar cualquier línea del TOC o párrafo del documento que corresponda a la Matriz de Cumplimiento o los 10 puntos
+    frases_eliminar = [
+        "MATRIZ DE CUMPLIMIENTO DE LA PAUTA",
+        "CON LOS PARÁMETROS OFICIALES SNI 2026 —TASA SOCIAL",
+        "CUMPLIMIENTO ÍNTEGRO DE LOS 10 PUNTOS EXIGIDOS",
+    ]
+    for p in list(doc.paragraphs):
+        t_up = p.text.strip().upper()
+        if _es_linea_toc(p) and "MATRIZ DE CUMPLIMIENTO" in t_up:
+            p._element.getparent().remove(p._element)
+        elif any(f in t_up for f in frases_eliminar):
+            p._element.getparent().remove(p._element)
+
+    # 3. Eliminar la tabla de los 10 puntos y cualquier tabla de síntesis duplicada antes de la Sección 1
+    p_sec1_real = None
+    for p in doc.paragraphs:
+        if not _es_linea_toc(p) and p.text.strip().upper().startswith("1. EL PROBLEMA EN OSORNO"):
+            p_sec1_real = p
+            break
 
     hijos_actuales = list(body)
     idx_sec1_body = hijos_actuales.index(p_sec1_real._p) if p_sec1_real is not None else 999
-    for p in list(doc.paragraphs):
-        if _es_linea_toc(p) and "MATRIZ DE CUMPLIMIENTO" in p.text.upper():
-            if list(body).index(p._p) >= idx_sec1_body - 3:
-                p._element.getparent().remove(p._element)
 
+    for tbl in list(doc.tables):
+        if len(tbl.rows) == 0:
+            continue
+        c0 = tbl.rows[0].cells[0].text.strip().upper()
+        c1 = tbl.rows[0].cells[1].text.strip().upper() if len(tbl.rows[0].cells) > 1 else ""
+        idx_tbl = list(body).index(tbl._tbl) if tbl._tbl in list(body) else 9999
+        if c0 == "PUNTO" and "EXIGENCIA" in c1:
+            tbl._element.getparent().remove(tbl._element)
+        elif c0 == "INDICADOR" and idx_tbl < idx_sec1_body:
+            tbl._element.getparent().remove(tbl._element)
+
+    # 4. Limpiar subtítulos duplicados en el bloque inicial
     for p in list(doc.paragraphs):
         t = p.text.strip().upper()
         if not _es_linea_toc(p) and (
@@ -1015,8 +1041,12 @@ def generar_entrega_completa_en_servidor(cfg_vivo, directorio_destino, aplicar_e
 
     ruta_plantilla_repo = _localizar_plantilla_ulagos()
     if os.path.exists(ruta_plantilla_repo):
-        shutil.copy2(ruta_plantilla_repo, os.path.join(directorio_destino, "plantilla_hoja_carta_institucional_BLANCO.docx"))
-        shutil.copy2(ruta_plantilla_repo, os.path.join(carpeta_entrega, "plantilla_hoja_carta_institucional_BLANCO.docx"))
+        dest_tpl_1 = os.path.join(directorio_destino, "plantilla_hoja_carta_institucional_BLANCO.docx")
+        dest_tpl_2 = os.path.join(carpeta_entrega, "plantilla_hoja_carta_institucional_BLANCO.docx")
+        if os.path.abspath(ruta_plantilla_repo) != os.path.abspath(dest_tpl_1):
+            shutil.copy2(ruta_plantilla_repo, dest_tpl_1)
+        if os.path.abspath(ruta_plantilla_repo) != os.path.abspath(dest_tpl_2):
+            shutil.copy2(ruta_plantilla_repo, dest_tpl_2)
 
     r_exc1, r_exc2, r_exc3 = mod2.exportar_tres_excels_limpios(resultados_vivos, carpeta_entrega)
 
@@ -1032,7 +1062,7 @@ def generar_entrega_completa_en_servidor(cfg_vivo, directorio_destino, aplicar_e
                 pass
 
     mod3.integrar_trabajo_josue_en_word(ruta_word, carpeta_entrega)
-    _reparar_toc_y_ubicar_matriz_en_cuerpo(ruta_word)
+    _reparar_toc_y_eliminar_matriz_cumplimiento(ruta_word)
 
     m = resultados_vivos["metricas"]
     esc_pes = calcular_escenario_sensibilidad(cfg_vivo, factor_ingresos=0.85, factor_costos=1.00)
@@ -1085,20 +1115,6 @@ def generar_entrega_completa_en_servidor(cfg_vivo, directorio_destino, aplicar_e
                     r_full = os.path.join(carpeta_entrega, arch)
                     if os.path.isfile(r_full):
                         zf.write(r_full, arcname=os.path.join(apellidos, arch))
-        except Exception:
-            pass
-
-    carpeta_local_script = os.path.dirname(os.path.abspath(__file__))
-    if os.path.abspath(directorio_destino) != os.path.abspath(carpeta_local_script):
-        try:
-            destino_local_entrega = os.path.join(carpeta_local_script, apellidos)
-            os.makedirs(destino_local_entrega, exist_ok=True)
-            for arch in os.listdir(carpeta_entrega):
-                origen_f = os.path.join(carpeta_entrega, arch)
-                if os.path.isfile(origen_f):
-                    shutil.copy2(origen_f, os.path.join(destino_local_entrega, arch))
-            if os.path.exists(ruta_zip):
-                shutil.copy2(ruta_zip, os.path.join(carpeta_local_script, os.path.basename(ruta_zip)))
         except Exception:
             pass
 
@@ -1527,7 +1543,7 @@ if b_der.button("GENERAR CARPETA DE ENTREGA (.ZIP CON WORD, PDF Y 3 EXCELS)", ty
             st.session_state["ultimo_zip_nombre"] = os.path.basename(info["ruta_zip"])
 
 if "ultimo_zip_bytes" in st.session_state:
-    st.success(f"Paquete '{st.session_state['ultimo_zip_nombre']}' generado con éxito (y actualizado en tu carpeta local).")
+    st.success(f"Paquete '{st.session_state['ultimo_zip_nombre']}' generado con éxito.")
     st.download_button(
         label=f"DESCARGAR ARCHIVO {st.session_state['ultimo_zip_nombre']}",
         data=st.session_state["ultimo_zip_bytes"],
@@ -1535,14 +1551,3 @@ if "ultimo_zip_bytes" in st.session_state:
         mime="application/zip",
         use_container_width=True,
     )
-
-
-if __name__ == "__main__" and not os.environ.get("STREAMLIT_SERVER_PORT"):
-    cfg_cli = copy.deepcopy(mod2.DEFAULTS)
-    cfg_cli["INVERSIONES_LISTA"] = copy.deepcopy(mod2.INVERSIONES_DEFAULT)
-    cfg_cli["COSTOS_VAR_LISTA"] = copy.deepcopy(mod2.COSTOS_VAR_DEFAULT)
-    cfg_cli["COSTOS_FIJOS_LISTA"] = copy.deepcopy(mod2.COSTOS_FIJOS_DEFAULT)
-    cfg_cli["PERSONAL_LISTA"] = copy.deepcopy(mod2.PERSONAL_DEFAULT)
-    carpeta_actual = os.path.dirname(os.path.abspath(__file__))
-    res_cli = generar_entrega_completa_en_servidor(cfg_cli, carpeta_actual, aplicar_estilo_oliver=True)
-    print(f"Entrega generada con portada ULagos y APA en: {res_cli['ruta_word']}")

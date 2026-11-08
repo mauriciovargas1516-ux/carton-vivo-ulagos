@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-consola_web.py.py — CONSOLA WEB INTERACTIVA ULAGOS (CON MODO NATURAL DE OLIVER + INTERPRETACIONES)
+consola_web.py.py — CONSOLA WEB INTERACTIVA ULAGOS (SIN EMOJIS + ESTILO ACADÉMICO LIMPIO)
 - Reemplaza únicamente este archivo en tu GitHub ('consola_web.py.py' o 'consola_web.py') sin tocar los demás scripts.
-- Incluye Modo Claro fijo (#F8FAFC) y botones para AGREGAR (+) y QUITAR (🗑️) filas en tiempo real.
+- Interfaz limpia sin emojis y con selectores completamente blancos.
 - Integra el "Modo Estudiante Natural (Aporte de Oliver)":
   1) Incorpora la redacción de Oliver en Resumen Ejecutivo, Problemática y Productos (corrigiendo los 'XXX' y kilos).
   2) Agrega párrafos de interpretación económica y financiera al pie de cada tabla clave (Inversiones, Costos, CT, Flujo Privado, Flujo Social y Sensibilidad).
-  3) Cambia el diseño de las 26 tablas del Word y de los 3 libros Excel a un estilo universitario clásico (sin cabeceras azul oscuro ni etiquetas de plantilla de IA, manteniendo todas las fórmulas =SUM, =NPV, =IRR vivas).
+  3) Cambia el diseño de las 26 tablas del Word y de los 3 libros Excel a un estilo universitario clásico (manteniendo todas las fórmulas =SUM, =NPV, =IRR vivas).
   4) Repara automáticamente el Índice de la Página 2 para que no queden líneas sueltas ni páginas desfasadas.
 """
 
@@ -93,7 +93,6 @@ def _es_linea_toc(p):
 
 
 def _crear_parrafo_interpretacion(doc, titulo_negrita, texto_cuerpo):
-    """Crea un párrafo de análisis e interpretación con formato académico sobrio (Arial 10.5 pt)."""
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
     p.paragraph_format.space_before = Pt(4)
@@ -116,11 +115,6 @@ def _reemplazar_texto_parrafo_conservando_formato(p, nuevo_texto, size_pt=10.5, 
 
 
 def _transformar_tablas_word_estilo_estudiante(doc):
-    """
-    Quita los encabezados azul petróleo (#1E293B) con letra blanca de todas las tablas del Word
-    y aplica un estilo universitario clásico (encabezado gris suave #D9E2F3 con texto negro en negrita
-    y bordes finos negros/grises), tal como las tablas del documento de Oliver.
-    """
     for tbl in doc.tables:
         if len(tbl.rows) == 0:
             continue
@@ -163,7 +157,6 @@ def _transformar_tablas_word_estilo_estudiante(doc):
 
 
 def _limpiar_titulos_meta_pauta(doc):
-    """Elimina etiquetas de plantilla como '(PUNTO 7)', '(PUNTO 9 PAUTA)' o '(EXPLICACIÓN FÁCIL DE ENTENDER)'."""
     reemplazos_titulos = [
         (" (PUNTO 4.3)", ""),
         (" (45 DÍAS DE DESFASE - PUNTO 6)", " (MÉTODO DE 45 DÍAS DE DESFASE)"),
@@ -191,12 +184,6 @@ def _limpiar_titulos_meta_pauta(doc):
 
 
 def _aplicar_redaccion_e_interpretaciones_oliver_en_word(ruta_word, resultados_vivos, cfg_vivo):
-    """
-    Inyecta en el Word:
-    1) La redacción de Oliver corregida (sin 'XXX' y con los kilos bien expresados) en Resumen Ejecutivo y Problemática.
-    2) Los párrafos de interpretación económica y financiera al pie de cada tabla principal.
-    3) El formato de tablas clásico de estudiante y la limpieza de títulos.
-    """
     doc = mod2.Document(ruta_word)
     m = resultados_vivos["metricas"]
 
@@ -222,7 +209,6 @@ def _aplicar_redaccion_e_interpretaciones_oliver_en_word(ruta_word, resultados_v
     inv_neta = round(inv_bruta / (1.0 + float(cfg_vivo.get("IVA", 0.19))))
     ct_inicial = m.get("ct_inicial", 6961008)
 
-    # 1. Aplicar redacción de Oliver corregida en el Resumen Ejecutivo
     idx_res = None
     for i, p in enumerate(doc.paragraphs):
         if not _es_linea_toc(p) and p.text.strip().upper() == "RESUMEN EJECUTIVO":
@@ -276,7 +262,6 @@ def _aplicar_redaccion_e_interpretaciones_oliver_en_word(ruta_word, resultados_v
         _reemplazar_texto_parrafo_conservando_formato(doc.paragraphs[idx_res + 3], txt_res_3)
         _reemplazar_texto_parrafo_conservando_formato(doc.paragraphs[idx_res + 4], txt_res_4)
 
-    # 2. Aplicar redacción de Oliver corregida en Sección 1 (Problemática)
     for i, p in enumerate(doc.paragraphs):
         if not _es_linea_toc(p) and p.text.strip().upper().startswith("1. EL PROBLEMA EN OSORNO"):
             if i + 2 < len(doc.paragraphs):
@@ -298,7 +283,6 @@ def _aplicar_redaccion_e_interpretaciones_oliver_en_word(ruta_word, resultados_v
                 )
             break
 
-    # 3. Inyectar párrafos de Interpretación Económica y Financiera antes de los encabezados siguientes
     marcadores_previos = ["Interpretación de la dotación:", "Interpretación de las inversiones:", "Interpretación del capital de trabajo:", "Interpretación del flujo privado:", "Interpretación de la evaluación social:"]
     for p in list(doc.paragraphs):
         if any(p.text.strip().startswith(mp) for mp in marcadores_previos):
@@ -387,7 +371,6 @@ def _aplicar_redaccion_e_interpretaciones_oliver_en_word(ruta_word, resultados_v
         )
         p_sec9._p.addprevious(p_int_fs._p)
 
-    # 4. Limpiar títulos y transformar todas las tablas al estilo clásico de estudiante
     _limpiar_titulos_meta_pauta(doc)
     _transformar_tablas_word_estilo_estudiante(doc)
 
@@ -395,11 +378,6 @@ def _aplicar_redaccion_e_interpretaciones_oliver_en_word(ruta_word, resultados_v
 
 
 def _transformar_excels_estilo_oliver(rutas_excels):
-    """
-    Transforma los 3 archivos Excel para quitarles los banners azul oscuro corporativos (#0F172A / #1E293B)
-    y dejarlos con apariencia limpia hecha por estudiantes en Excel (encabezados gris/azul suave con letra negra,
-    sin pestañas coloreadas y con el subtítulo de Oliver en el catastro de locales), manteniendo intactas todas las fórmulas.
-    """
     fill_blanco = PatternFill("solid", fgColor="FFFFFF")
     fill_header_suave = PatternFill("solid", fgColor="D9E1F2")
     fill_total_suave = PatternFill("solid", fgColor="EDEDED")
@@ -731,7 +709,7 @@ def generar_entrega_completa_en_servidor(cfg_vivo, directorio_destino, aplicar_e
 
 
 # ==============================================================================
-# 3. INTERFAZ VISUAL EN MODO CLARO FIJO + LISTAS DINÁMICAS (+ AGREGAR / 🗑️ QUITAR)
+# 3. INTERFAZ VISUAL EN MODO CLARO FIJO + SIN EMOJIS
 # ==============================================================================
 
 st.set_page_config(page_title="Consola Interactiva ULagos - Cartón Vivo Osorno", layout="wide")
@@ -782,11 +760,15 @@ st.markdown(
         line-height: 1.35;
     }
     div[data-baseweb="input"] > div,
-    div[data-baseweb="select"] > div {
+    div[data-baseweb="select"] > div,
+    div[data-baseweb="select"] > div > div {
         background-color: #FFFFFF !important;
         color: #0F172A !important;
-        border: 1px solid #94A3B8 !important;
-        border-radius: 4px !important;
+        border-color: #94A3B8 !important;
+    }
+    div[data-baseweb="select"] svg {
+        fill: #0F172A !important;
+        color: #0F172A !important;
     }
     input {
         color: #0F172A !important;
@@ -826,9 +808,9 @@ if "cfg" not in st.session_state:
 
 cfg = st.session_state.cfg
 
-# Botones rápidos de Presets arriba
+# Botones rápidos de Presets arriba (sin emojis)
 col_p1, col_p2, col_p3 = st.columns([1.2, 1.2, 1.2])
-if col_p1.button("🔶 Cargar Precios Sombra SNI 2026 (TSD 5,5%)", use_container_width=True):
+if col_p1.button("Cargar Parámetros SNI 2026 (TSD 5,5%)", use_container_width=True):
     cfg["TASA_DESCUENTO_SOCIAL"] = 0.055
     cfg["FC_MOC"], cfg["FC_MOSC"], cfg["FC_MONC"], cfg["FC_DIVISA"] = 0.97, 0.95, 0.91, 1.00
     cfg["OTROS_BEN_SOC_ANUAL"] = 0.0
@@ -837,7 +819,7 @@ if col_p1.button("🔶 Cargar Precios Sombra SNI 2026 (TSD 5,5%)", use_container
             del st.session_state[k]
     st.rerun()
 
-if col_p2.button("🔷 Cargar Caso Base Original (TSD 6,0%)", use_container_width=True):
+if col_p2.button("Cargar Caso Base Original (TSD 6,0%)", use_container_width=True):
     cfg["TASA_DESCUENTO_SOCIAL"] = 0.06
     cfg["FC_MOC"], cfg["FC_MOSC"], cfg["FC_MONC"], cfg["FC_DIVISA"] = 1.00, 0.85, 0.68, 1.01
     cfg["OTROS_BEN_SOC_ANUAL"] = 2500000.0
@@ -846,7 +828,7 @@ if col_p2.button("🔷 Cargar Caso Base Original (TSD 6,0%)", use_container_widt
             del st.session_state[k]
     st.rerun()
 
-if col_p3.button("♻️ Restaurar Todas las Listas por Defecto", use_container_width=True):
+if col_p3.button("Restaurar Valores por Defecto", use_container_width=True):
     c_reset = copy.deepcopy(mod2.DEFAULTS)
     c_reset["INVERSIONES_LISTA"] = copy.deepcopy(mod2.INVERSIONES_DEFAULT)
     c_reset["COSTOS_VAR_LISTA"] = copy.deepcopy(mod2.COSTOS_VAR_DEFAULT)
@@ -860,9 +842,8 @@ if col_p3.button("♻️ Restaurar Todas las Listas por Defecto", use_container_
 
 banner_placeholder = st.empty()
 
-# Casilla activada por defecto para aplicar todas las ideas de Oliver
 modo_oliver_activo = st.checkbox(
-    "✅ Aplicar estilo natural de Oliver al generar el ZIP (Redacción adaptada sin 'XXX' + Párrafos de interpretación en cada tabla + Tablas y Excels sobrios sin aspecto de IA)",
+    "Incluir glosas de interpretación financiera y formato clásico universitario en Word y libros Excel",
     value=True,
 )
 
@@ -965,14 +946,14 @@ for idx, inv in enumerate(cfg["INVERSIONES_LISTA"]):
         index=0 if str(inv.get("origen", "Nacional")).lower() == "nacional" else 1,
         key=f"dyn_inv_ori_{idx}_{len(cfg['INVERSIONES_LISTA'])}", label_visibility="collapsed"
     )
-    if c5.button("🗑️", key=f"del_inv_{idx}", help="Eliminar esta inversión") and len(cfg["INVERSIONES_LISTA"]) > 1:
+    if c5.button("X", key=f"del_inv_{idx}", help="Eliminar esta inversión") and len(cfg["INVERSIONES_LISTA"]) > 1:
         idx_borrar_inv = idx
 
 if idx_borrar_inv is not None:
     cfg["INVERSIONES_LISTA"].pop(idx_borrar_inv)
     st.rerun()
 
-if st.button("➕ Agregar Nueva Máquina / Inversión en Activo Fijo"):
+if st.button("+ Agregar Máquina o Inversión en Activo Fijo"):
     cfg["INVERSIONES_LISTA"].append({
         "item": f"Nuevo Equipo o Acondicionamiento #{len(cfg['INVERSIONES_LISTA']) + 1}",
         "monto_bruto": 1000000,
@@ -1010,14 +991,14 @@ for idx, cv in enumerate(cfg["COSTOS_VAR_LISTA"]):
         index=0 if str(cv.get("origen", "Nacional")).lower() == "nacional" else 1,
         key=f"dyn_cv_ori_{idx}_{len(cfg['COSTOS_VAR_LISTA'])}", label_visibility="collapsed"
     )
-    if c5.button("🗑️", key=f"del_cv_{idx}", help="Eliminar este costo variable") and len(cfg["COSTOS_VAR_LISTA"]) > 1:
+    if c5.button("X", key=f"del_cv_{idx}", help="Eliminar este costo variable") and len(cfg["COSTOS_VAR_LISTA"]) > 1:
         idx_borrar_cv = idx
 
 if idx_borrar_cv is not None:
     cfg["COSTOS_VAR_LISTA"].pop(idx_borrar_cv)
     st.rerun()
 
-if st.button("➕ Agregar Nuevo Costo Variable"):
+if st.button("+ Agregar Costo Variable"):
     cfg["COSTOS_VAR_LISTA"].append({
         "item": f"Nuevo Insumo o Costo Variable #{len(cfg['COSTOS_VAR_LISTA']) + 1}",
         "costo": 500,
@@ -1044,14 +1025,14 @@ for idx, cf in enumerate(cfg["COSTOS_FIJOS_LISTA"]):
         index=0 if cf.get("afecto_iva", "Exento") == "Exento" else 1,
         key=f"dyn_cf_iva_{idx}_{len(cfg['COSTOS_FIJOS_LISTA'])}", label_visibility="collapsed"
     )
-    if c4.button("🗑️", key=f"del_cf_{idx}", help="Eliminar este gasto fijo") and len(cfg["COSTOS_FIJOS_LISTA"]) > 1:
+    if c4.button("X", key=f"del_cf_{idx}", help="Eliminar este gasto fijo") and len(cfg["COSTOS_FIJOS_LISTA"]) > 1:
         idx_borrar_cf = idx
 
 if idx_borrar_cf is not None:
     cfg["COSTOS_FIJOS_LISTA"].pop(idx_borrar_cf)
     st.rerun()
 
-if st.button("➕ Agregar Nuevo Gasto Fijo Mensual"):
+if st.button("+ Agregar Gasto Fijo Mensual"):
     cfg["COSTOS_FIJOS_LISTA"].append({
         "item": f"Nuevo Gasto Fijo Mensual #{len(cfg['COSTOS_FIJOS_LISTA']) + 1}",
         "mensual": 100000,
@@ -1086,14 +1067,14 @@ for idx, p_item in enumerate(cfg["PERSONAL_LISTA"]):
     sue_txt = c4.text_input("Sueldo", value=str(p_item["sueldo_bruto_mensual"]), key=f"dyn_pe_sue_{idx}_{len(cfg['PERSONAL_LISTA'])}", label_visibility="collapsed")
     p_item["sueldo_bruto_mensual"] = _parse_float(sue_txt, p_item["sueldo_bruto_mensual"])
     p_item["competencias"] = c5.text_input("Tareas", value=str(p_item.get("competencias", "Operación en planta")), key=f"dyn_pe_com_{idx}_{len(cfg['PERSONAL_LISTA'])}", label_visibility="collapsed")
-    if c6.button("🗑️", key=f"del_pe_{idx}", help="Eliminar este cargo") and len(cfg["PERSONAL_LISTA"]) > 1:
+    if c6.button("X", key=f"del_pe_{idx}", help="Eliminar este cargo") and len(cfg["PERSONAL_LISTA"]) > 1:
         idx_borrar_pers = idx
 
 if idx_borrar_pers is not None:
     cfg["PERSONAL_LISTA"].pop(idx_borrar_pers)
     st.rerun()
 
-if st.button("➕ Agregar Nuevo Cargo / Trabajador a la Planta"):
+if st.button("+ Agregar Cargo o Trabajador a la Planta"):
     cfg["PERSONAL_LISTA"].append({
         "cargo": f"Nuevo Operario / Cargo #{len(cfg['PERSONAL_LISTA']) + 1}",
         "cantidad": 1,
@@ -1129,11 +1110,11 @@ banner_placeholder.markdown(
 st.divider()
 
 b_izq, b_der = st.columns(2)
-if b_izq.button("🔄 RECALCULAR VAN / TIR EN VIVO", use_container_width=True):
-    st.toast("VAN y TIR recalculados en el panel superior.", icon="✅")
+if b_izq.button("RECALCULAR INDICADORES (VAN / TIR)", use_container_width=True):
+    st.toast("Indicadores financieros actualizados en el panel superior.")
 
-if b_der.button("🚀 GENERAR ENTREGA COMPLETA (WORD + PDF + 3 EXCELS EN .ZIP)", type="primary", use_container_width=True):
-    with st.spinner("Ejecutando Scripts 2 + 3 + Estilo Natural de Oliver y empaquetando ZIP..."):
+if b_der.button("GENERAR CARPETA DE ENTREGA (.ZIP CON WORD, PDF Y 3 EXCELS)", type="primary", use_container_width=True):
+    with st.spinner("Ejecutando cálculos y empaquetando archivo ZIP de entrega..."):
         dir_temp = tempfile.mkdtemp()
         info = generar_entrega_completa_en_servidor(cfg, dir_temp, aplicar_estilo_oliver=modo_oliver_activo)
         with open(info["ruta_zip"], "rb") as fz:
@@ -1141,9 +1122,9 @@ if b_der.button("🚀 GENERAR ENTREGA COMPLETA (WORD + PDF + 3 EXCELS EN .ZIP)",
             st.session_state["ultimo_zip_nombre"] = os.path.basename(info["ruta_zip"])
 
 if "ultimo_zip_bytes" in st.session_state:
-    st.success(f"¡Paquete '{st.session_state['ultimo_zip_nombre']}' generado con éxito!")
+    st.success(f"Paquete '{st.session_state['ultimo_zip_nombre']}' generado con éxito.")
     st.download_button(
-        label=f"📥 HAZ CLIC AQUÍ PARA DESCARGAR {st.session_state['ultimo_zip_nombre']}",
+        label=f"DESCARGAR ARCHIVO {st.session_state['ultimo_zip_nombre']}",
         data=st.session_state["ultimo_zip_bytes"],
         file_name=st.session_state["ultimo_zip_nombre"],
         mime="application/zip",

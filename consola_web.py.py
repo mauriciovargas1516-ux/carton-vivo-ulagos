@@ -1,13 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-consola_web.py.py — CONSOLA WEB INTERACTIVA ULAGOS (SIN EMOJIS + BOTONES VISIBLES + FIX AUTÓNOMO)
-- Reemplaza únicamente este archivo en tu GitHub ('consola_web.py.py' o 'consola_web.py') sin tocar los demás scripts.
-- Incluye internamente '_estilizar_run_local' y '_fmt_int_local' para evitar cualquier AttributeError con mod2.
-- Integra el "Modo Estudiante Natural (Aporte de Oliver)":
-  1) Incorpora la redacción de Oliver en Resumen Ejecutivo y Problemática (corrigiendo los 'XXX' y kilos).
-  2) Agrega párrafos de interpretación económica y financiera al pie de cada tabla clave.
-  3) Cambia el diseño de las 26 tablas del Word y de los 3 libros Excel a un estilo universitario clásico.
-  4) Repara automáticamente el Índice de la Página 2.
+consola_web.py — CONSOLA WEB INTERACTIVA ULAGOS (CON PORTADA INSTITUCIONAL + APA 7 + ESTILO OLIVER)
+- Aplica automáticamente 'plantilla_hoja_carta_institucional_BLANCO.docx' (portada oficial ULagos, encabezado en páginas interiores y contraportada).
+- Cambia 'EQUIPO FORMULADOR (INTEGRANTES):' por 'INTEGRANTES:' en la portada conservando intactos los nombres.
+- Formatea la sección de 'Bibliografía' en norma APA 7ª edición (orden alfabético, sangría francesa de 1,27 cm y títulos en cursiva).
+- Mantiene intactos los Anexos 1, 2, 3 y 4 y actualiza los archivos también en la carpeta local del proyecto.
 """
 
 import os
@@ -27,6 +24,7 @@ matplotlib.use("Agg")
 import streamlit as st
 import openpyxl
 from openpyxl.styles import PatternFill, Font, Border, Side
+from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT, WD_TAB_LEADER
 from docx.oxml import OxmlElement
@@ -85,7 +83,7 @@ mod3 = cargar_modulo_por_ruta("script3_josue", "3_integrador_arboles_y_pauta_jos
 
 
 # ==============================================================================
-# 2. REPARADOR DE ÍNDICE Y TRANSFORMADOR ESTILO OLIVER (WORD + 3 EXCELS)
+# 2. FUNCIONES DE FORMATO, PORTADA INSTITUCIONAL ULAGOS Y BIBLIOGRAFÍA APA
 # ==============================================================================
 
 def _es_linea_toc(p):
@@ -136,11 +134,328 @@ def _reemplazar_texto_parrafo_conservando_formato(p, nuevo_texto, size_pt=10.5, 
     _estilizar_run_local(r_nuevo, size_pt=size_pt, bold=bold, color_rgb=(0, 0, 0))
 
 
+def _localizar_plantilla_ulagos():
+    """Busca plantilla_hoja_carta_institucional_BLANCO.docx en la carpeta del script, cwd o carpeta padre."""
+    carpeta_script = os.path.dirname(os.path.abspath(__file__))
+    candidatos = [
+        os.path.join(carpeta_script, "plantilla_hoja_carta_institucional_BLANCO.docx"),
+        os.path.join(os.getcwd(), "plantilla_hoja_carta_institucional_BLANCO.docx"),
+        os.path.join(os.path.dirname(carpeta_script), "plantilla_hoja_carta_institucional_BLANCO.docx"),
+    ]
+    for c in candidatos:
+        if os.path.exists(c):
+            return c
+    for raiz, _, archivos in os.walk(carpeta_script):
+        for arch in archivos:
+            if "plantilla_hoja_carta_institucional" in arch.lower() and arch.lower().endswith(".docx"):
+                return os.path.join(raiz, arch)
+    return candidatos[0]
+
+
+def _formatear_bibliografia_apa(doc):
+    """
+    Reemplaza cualquier bloque previo de referencias por una sección 'Bibliografía'
+    en formato APA 7ª edición (sangría francesa de 1,27 cm / 0.5 pulgadas, alineación izquierda,
+    orden alfabético estricto y títulos de obras en cursiva).
+    """
+    # Eliminar bibliografía APA previa si se re-ejecuta sobre el mismo documento
+    for p in list(doc.paragraphs):
+        if not _es_linea_toc(p) and p.text.strip().startswith("Ilustre Municipalidad de Osorno. (2025)."):
+            p._element.getparent().remove(p._element)
+
+    p_tit_ref = None
+    idx_tit = None
+    for i, p in enumerate(doc.paragraphs):
+        if _es_linea_toc(p):
+            continue
+        t_up = p.text.strip().upper()
+        if (
+            t_up.startswith("REFERENCIAS Y FUENTES")
+            or t_up.startswith("REFERENCIAS OFICIALES")
+            or t_up == "BIBLIOGRAFÍA"
+            or t_up == "BIBLIOGRAFIA"
+        ):
+            p_tit_ref = p
+            idx_tit = i
+            break
+
+    # Si existe el título de referencias, limpiar los párrafos de viñetas/texto viejo hasta el siguiente título o Anexo
+    if p_tit_ref is not None and idx_tit is not None:
+        a_borrar = []
+        for p_sig in doc.paragraphs[idx_tit + 1:]:
+            t_sig = p_sig.text.strip()
+            t_sig_up = t_sig.upper()
+            if (
+                t_sig_up.startswith("ANEXO ")
+                or re.match(r"^\d+\.", t_sig_up)
+                or t_sig_up.startswith("MATRIZ DE ")
+            ):
+                break
+            a_borrar.append(p_sig)
+        for p_old in a_borrar:
+            p_old._element.getparent().remove(p_old._element)
+    else:
+        # Si no encontró el subtítulo, ubicarlo justo antes del ANEXO 1
+        p_anexo1 = None
+        for p in doc.paragraphs:
+            if not _es_linea_toc(p) and p.text.strip().upper().startswith("ANEXO 1"):
+                p_anexo1 = p
+                break
+        p_tit_ref = doc.add_paragraph()
+        if p_anexo1 is not None:
+            p_anexo1._p.addprevious(p_tit_ref._p)
+
+    _reemplazar_texto_parrafo_conservando_formato(p_tit_ref, "Bibliografía", size_pt=11.5, bold=True)
+    p_tit_ref.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    p_tit_ref.paragraph_format.space_before = Pt(12)
+    p_tit_ref.paragraph_format.space_after = Pt(6)
+    p_tit_ref.paragraph_format.keep_with_next = True
+
+    referencias_apa = [
+        (
+            "Ilustre Municipalidad de Osorno. (2025). ",
+            "Antecedentes de contratos de recolección de residuos sólidos domiciliarios, operación del Vertedero Provincial de Curaco y registros comunales SINADER",
+            ". Dirección de Medio Ambiente, Aseo y Ornato."
+        ),
+        (
+            "Ministerio de Desarrollo Social y Familia [MIDESO]. (2024). ",
+            "Metodología para la formulación y evaluación social de proyectos de gestión de residuos sólidos domiciliarios y asimilables",
+            ". División de Evaluación Social de Inversiones."
+        ),
+        (
+            "Ministerio de Desarrollo Social y Familia [MIDESO]. (2025). ",
+            "Metodología general de preparación y evaluación de proyectos de inversión pública",
+            ". Sistema Nacional de Inversiones (SNI)."
+        ),
+        (
+            "Ministerio de Desarrollo Social y Familia [MIDESO]. (2026). ",
+            "Precios sociales vigentes 2026 para el Sistema Nacional de Inversiones (Tasa Social de Descuento, Mano de Obra y Divisa)",
+            ". Gobierno de Chile. https://sni.gob.cl"
+        ),
+        (
+            "Ministerio del Medio Ambiente [MMA]. (2016). ",
+            "Ley N° 20.920: Establece marco para la gestión de residuos, la responsabilidad extendida del productor y fomento al reciclaje (Ley REP)",
+            ". Diario Oficial de la República de Chile."
+        ),
+        (
+            "Ministerio de Salud [MINSAL]. (2005). ",
+            "Decreto Supremo N° 114/2005: Aprueba reglamento sobre seguridad de los juguetes",
+            ". Diario Oficial de la República de Chile."
+        ),
+        (
+            "Sapag Chain, N., Sapag Chain, R., & Sapag Puelma, J. M. (2014). ",
+            "Preparación y evaluación de proyectos",
+            " (6.ª ed.). McGraw-Hill Education."
+        ),
+        (
+            "Servicio de Impuestos Internos [SII]. (2025). ",
+            "Circular N° 53/2025: Instrucciones sobre el Régimen Pro Pyme General (Artículo 14 letra D de la Ley sobre Impuesto a la Renta)",
+            ". Gobierno de Chile."
+        ),
+    ]
+
+    ultimo_nodo = p_tit_ref._p
+    for parte_autor, parte_cursiva, parte_final in referencias_apa:
+        p_apa = doc.add_paragraph()
+        p_apa.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        p_apa.paragraph_format.left_indent = Inches(0.5)
+        p_apa.paragraph_format.first_line_indent = Inches(-0.5)
+        p_apa.paragraph_format.space_before = Pt(2)
+        p_apa.paragraph_format.space_after = Pt(5)
+        p_apa.paragraph_format.line_spacing = 1.15
+
+        r1 = p_apa.add_run(parte_autor)
+        _estilizar_run_local(r1, size_pt=10.5, bold=False, italic=False)
+        r2 = p_apa.add_run(parte_cursiva)
+        _estilizar_run_local(r2, size_pt=10.5, bold=False, italic=True)
+        r3 = p_apa.add_run(parte_final)
+        _estilizar_run_local(r3, size_pt=10.5, bold=False, italic=False)
+
+        ultimo_nodo.addnext(p_apa._p)
+        ultimo_nodo = p_apa._p
+
+
+def _aplicar_plantilla_institucional_ulagos(ruta_word, ruta_plantilla):
+    """
+    Inyecta el diseño oficial de 'plantilla_hoja_carta_institucional_BLANCO.docx' en el documento Word:
+    - Fondo oficial de portada ULagos con behindDoc='1' (detrás del texto de portada).
+    - Encabezado con logo ULagos en todas las páginas interiores.
+    - Pie de página institucional.
+    """
+    if not ruta_plantilla or not os.path.exists(ruta_plantilla):
+        return
+
+    doc_gen = Document(ruta_word)
+    xml_gen = doc_gen.element.body.xml
+    if "p_carta_portadas_institucionales" in xml_gen or "rIdULagosPortada" in xml_gen:
+        for anchor in doc_gen.element.body.findall(".//" + qn("wp:anchor")):
+            anchor.set("behindDoc", "1")
+        doc_gen.save(ruta_word)
+        return
+
+    with tempfile.TemporaryDirectory() as tmp_z:
+        dir_tpl = os.path.join(tmp_z, "tpl")
+        dir_doc = os.path.join(tmp_z, "doc")
+        with zipfile.ZipFile(ruta_plantilla, "r") as zt:
+            zt.extractall(dir_tpl)
+        with zipfile.ZipFile(ruta_word, "r") as zd:
+            zd.extractall(dir_doc)
+
+        media_tpl = os.path.join(dir_tpl, "word", "media")
+        media_doc = os.path.join(dir_doc, "word", "media")
+        os.makedirs(media_doc, exist_ok=True)
+
+        # Mapear relaciones de document.xml.rels de la plantilla para saber qué imagen es la portada
+        tpl_rels_path = os.path.join(dir_tpl, "word", "_rels", "document.xml.rels")
+        mapa_rid_tpl = {}
+        if os.path.exists(tpl_rels_path):
+            with open(tpl_rels_path, "r", encoding="utf-8") as fr:
+                rels_tpl_txt = fr.read()
+            for m_rel in re.finditer(r'Id="(rId\d+)"[^>]+Target="media/([^"]+)"', rels_tpl_txt):
+                mapa_rid_tpl[m_rel.group(1)] = m_rel.group(2)
+
+        tpl_doc_xml_path = os.path.join(dir_tpl, "word", "document.xml")
+        with open(tpl_doc_xml_path, "r", encoding="utf-8") as fr:
+            tpl_doc_xml = fr.read()
+
+        drawings_tpl = re.findall(r"(<w:drawing>.*?</w:drawing>)", tpl_doc_xml, flags=re.DOTALL)
+        img_portada_nombre = "image1.png"
+        draw_portada_xml = ""
+        if drawings_tpl:
+            raw_draw_1 = drawings_tpl[0]
+            m_rid = re.search(r'r:embed="(rId\d+)"', raw_draw_1)
+            if m_rid and m_rid.group(1) in mapa_rid_tpl:
+                img_portada_nombre = mapa_rid_tpl[m_rid.group(1)]
+            draw_portada_xml = re.sub(r'r:embed="rId\d+"', 'r:embed="rIdULagosPortada"', raw_draw_1)
+            draw_portada_xml = draw_portada_xml.replace('behindDoc="0"', 'behindDoc="1"')
+
+        # Copiar imágenes institucionales de la plantilla
+        src_portada_img = os.path.join(media_tpl, img_portada_nombre)
+        if os.path.exists(src_portada_img):
+            shutil.copy2(src_portada_img, os.path.join(media_doc, "ulagos_portada.png"))
+        for img_cand, dest_name in [("image2.png", "ulagos_contraportada.png"), ("image3.png", "ulagos_header.png")]:
+            p_src = os.path.join(media_tpl, img_cand)
+            if os.path.exists(p_src):
+                shutil.copy2(p_src, os.path.join(media_doc, dest_name))
+
+        # Copiar headers y footers de la plantilla y actualizar sus .rels
+        rels_dir = os.path.join(dir_doc, "word", "_rels")
+        os.makedirs(rels_dir, exist_ok=True)
+
+        for hf in ["header1.xml", "header2.xml", "header3.xml", "footer1.xml", "footer2.xml", "footer3.xml"]:
+            src_hf = os.path.join(dir_tpl, "word", hf)
+            if os.path.exists(src_hf):
+                shutil.copy2(src_hf, os.path.join(dir_doc, "word", hf))
+
+            src_hrel = os.path.join(dir_tpl, "word", "_rels", hf + ".rels")
+            if os.path.exists(src_hrel):
+                with open(src_hrel, "r", encoding="utf-8") as fr:
+                    txt_rel = fr.read()
+                for m_img in re.finditer(r'Target="media/([^"]+)"', txt_rel):
+                    nombre_orig = m_img.group(1)
+                    src_h_img = os.path.join(media_tpl, nombre_orig)
+                    if os.path.exists(src_h_img):
+                        shutil.copy2(src_h_img, os.path.join(media_doc, "ulagos_header.png"))
+                    txt_rel = txt_rel.replace(f"media/{nombre_orig}", "media/ulagos_header.png")
+                with open(os.path.join(rels_dir, hf + ".rels"), "w", encoding="utf-8") as fw:
+                    fw.write(txt_rel)
+
+        # Registrar relaciones en word/_rels/document.xml.rels
+        doc_rels_path = os.path.join(rels_dir, "document.xml.rels")
+        with open(doc_rels_path, "r", encoding="utf-8") as fr:
+            rels_xml = fr.read()
+
+        nuevas_rels = (
+            '<Relationship Id="rIdULagosPortada" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/ulagos_portada.png"/>'
+            '<Relationship Id="rIdULagosH1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>'
+            '<Relationship Id="rIdULagosH2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header2.xml"/>'
+            '<Relationship Id="rIdULagosH3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header3.xml"/>'
+            '<Relationship Id="rIdULagosF1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>'
+            '<Relationship Id="rIdULagosF2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer2.xml"/>'
+            '<Relationship Id="rIdULagosF3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer3.xml"/>'
+        )
+        if "rIdULagosPortada" not in rels_xml:
+            rels_xml = rels_xml.replace("</Relationships>", nuevas_rels + "</Relationships>")
+            with open(doc_rels_path, "w", encoding="utf-8") as fw:
+                fw.write(rels_xml)
+
+        # Asegurar Content_Types para header/footer y png
+        ct_path = os.path.join(dir_doc, "[Content_Types].xml")
+        with open(ct_path, "r", encoding="utf-8") as fr:
+            ct_xml = fr.read()
+        if 'Extension="png"' not in ct_xml:
+            ct_xml = ct_xml.replace("<Types ", '<Types ').replace("</Types>", '<Default Extension="png" ContentType="image/png"/></Types>')
+        overrides_hf = (
+            '<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>'
+            '<Override PartName="/word/header2.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>'
+            '<Override PartName="/word/header3.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>'
+            '<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>'
+            '<Override PartName="/word/footer2.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>'
+            '<Override PartName="/word/footer3.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>'
+        )
+        if "/word/header1.xml" not in ct_xml:
+            ct_xml = ct_xml.replace("</Types>", overrides_hf + "</Types>")
+        with open(ct_path, "w", encoding="utf-8") as fw:
+            fw.write(ct_xml)
+
+        # Inyectar el drawing de portada en el primer párrafo de document.xml y los headers en sectPr
+        doc_xml_path = os.path.join(dir_doc, "word", "document.xml")
+        with open(doc_xml_path, "r", encoding="utf-8") as fr:
+            doc_xml = fr.read()
+
+        if 'xmlns:wp14=' not in doc_xml:
+            doc_xml = doc_xml.replace(
+                "<w:document ",
+                '<w:document xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing" '
+                'xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" '
+                'xmlns:v="urn:schemas-microsoft-com:vml" '
+                'xmlns:o="urn:schemas-microsoft-com:office:office" '
+                'xmlns:w10="urn:schemas-microsoft-com:office:word" '
+            )
+
+        if draw_portada_xml and "rIdULagosPortada" not in doc_xml:
+            p_fondo_portada = (
+                f'<w:p><w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr>'
+                f'<w:r><w:rPr><w:noProof/></w:rPr>{draw_portada_xml}</w:r></w:p>'
+            )
+            doc_xml = doc_xml.replace("<w:body>", "<w:body>" + p_fondo_portada, 1)
+
+        refs_sect = (
+            '<w:headerReference w:type="even" r:id="rIdULagosH1"/>'
+            '<w:headerReference w:type="default" r:id="rIdULagosH2"/>'
+            '<w:footerReference w:type="even" r:id="rIdULagosF1"/>'
+            '<w:footerReference w:type="default" r:id="rIdULagosF2"/>'
+            '<w:headerReference w:type="first" r:id="rIdULagosH3"/>'
+            '<w:footerReference w:type="first" r:id="rIdULagosF3"/>'
+            '<w:titlePg/>'
+        )
+        if "rIdULagosH2" not in doc_xml:
+            doc_xml = re.sub(r"<w:headerReference[^/>]*/>", "", doc_xml)
+            doc_xml = re.sub(r"<w:footerReference[^/>]*/>", "", doc_xml)
+            doc_xml = re.sub(r"<w:titlePg[^/>]*/>", "", doc_xml)
+            doc_xml = re.sub(r"(<w:sectPr[^>]*>)", r"\1" + refs_sect, doc_xml)
+
+        with open(doc_xml_path, "w", encoding="utf-8") as fw:
+            fw.write(doc_xml)
+
+        with zipfile.ZipFile(ruta_word, "w", zipfile.ZIP_DEFLATED) as zout:
+            for root_d, _, files_d in os.walk(dir_doc):
+                for file_d in files_d:
+                    full_p = os.path.join(root_d, file_d)
+                    rel_p = os.path.relpath(full_p, dir_doc)
+                    zout.write(full_p, arcname=rel_p)
+
+
 def _transformar_tablas_word_estilo_estudiante(doc):
     for tbl in doc.tables:
         if len(tbl.rows) == 0:
             continue
         for cell in tbl.rows[0].cells:
+            for p in cell.paragraphs:
+                if "Para tu Defensa y Entrega" in p.text:
+                    _reemplazar_texto_parrafo_conservando_formato(
+                        p, "Explicación y Justificación Técnica en Osorno", size_pt=8.0, bold=True
+                    )
             tcPr = cell._tc.get_or_add_tcPr()
             for shd_old in tcPr.findall(qn("w:shd")):
                 tcPr.remove(shd_old)
@@ -178,7 +493,37 @@ def _transformar_tablas_word_estilo_estudiante(doc):
                 tcPr.append(tcBorders)
 
 
-def _limpiar_titulos_meta_pauta(doc):
+def _reemplazar_integrantes_en_parrafo(p):
+    """Cambia 'EQUIPO FORMULADOR (INTEGRANTES):' por 'INTEGRANTES:' sin borrar los nombres si comparten párrafo."""
+    reemplazado_en_run = False
+    for r in p.runs:
+        if "EQUIPO FORMULADOR (INTEGRANTES):" in r.text:
+            r.text = r.text.replace("EQUIPO FORMULADOR (INTEGRANTES):", "INTEGRANTES:")
+            reemplazado_en_run = True
+        elif "EQUIPO FORMULADOR:" in r.text:
+            r.text = r.text.replace("EQUIPO FORMULADOR:", "INTEGRANTES:")
+            reemplazado_en_run = True
+
+    if not reemplazado_en_run and "EQUIPO FORMULADOR" in p.text.upper():
+        lineas = p.text.splitlines()
+        if len(lineas) <= 1:
+            _reemplazar_texto_parrafo_conservando_formato(p, "INTEGRANTES:", size_pt=10.5, bold=True)
+        else:
+             p_nuevo_txt = re.sub(
+                r"EQUIPO FORMULADOR\s*(\(INTEGRANTES\))?\s*:",
+                "INTEGRANTES:",
+                p.text,
+                flags=re.IGNORECASE,
+            )
+            _reemplazar_texto_parrafo_conservando_formato(p, p_nuevo_txt, size_pt=10.5, bold=True)
+
+
+def _limpiar_titulos_y_portada(doc):
+    """
+    1) Cambia 'EQUIPO FORMULADOR (INTEGRANTES):' por 'INTEGRANTES:' en la portada (párrafos y tablas).
+    2) Elimina etiquetas meta de la pauta ('(PUNTO 7)', '(PUNTO 9 PAUTA)', etc.).
+    3) Activa keep_with_next en títulos de secciones y anexos.
+    """
     reemplazos_titulos = [
         (" (PUNTO 4.3)", ""),
         (" (45 DÍAS DE DESFASE - PUNTO 6)", " (MÉTODO DE 45 DÍAS DE DESFASE)"),
@@ -188,12 +533,17 @@ def _limpiar_titulos_meta_pauta(doc):
         (" (PUNTO 10 PAUTA)", ""),
         (" (EXPLICACIÓN FÁCIL DE ENTENDER)", " (MEMORIA DE CÁLCULO Y SUPUESTOS)"),
     ]
-    for p in doc.paragraphs:
-        txt = p.text
+    for idx_p, p in enumerate(doc.paragraphs):
+        txt = p.text.strip()
+        if idx_p < 35 and "EQUIPO FORMULADOR" in txt.upper():
+            _reemplazar_integrantes_en_parrafo(p)
+            continue
+
+        txt_orig = p.text
         modificado = False
         for viejo, nuevo in reemplazos_titulos:
-            if viejo in txt:
-                txt = txt.replace(viejo, nuevo)
+            if viejo in txt_orig:
+                txt_orig = txt_orig.replace(viejo, nuevo)
                 modificado = True
         if modificado:
             if _es_linea_toc(p):
@@ -202,7 +552,18 @@ def _limpiar_titulos_meta_pauta(doc):
                         for viejo, nuevo in reemplazos_titulos:
                             t_el.text = t_el.text.replace(viejo, nuevo)
             else:
-                _reemplazar_texto_parrafo_conservando_formato(p, txt, size_pt=11.5, bold=True)
+                _reemplazar_texto_parrafo_conservando_formato(p, txt_orig, size_pt=11.5, bold=True)
+
+        if not _es_linea_toc(p) and (txt.upper().startswith("ANEXO ") or re.match(r"^\d+\.", txt)):
+            p.paragraph_format.keep_with_next = True
+
+    # Revisar también si la portada usa alguna tabla
+    for tbl in doc.tables[:2]:
+        for row in tbl.rows:
+            for cell in row.cells:
+                for p in cell.paragraphs:
+                    if "EQUIPO FORMULADOR" in p.text.upper():
+                        _reemplazar_integrantes_en_parrafo(p)
 
 
 def _aplicar_redaccion_e_interpretaciones_oliver_en_word(ruta_word, resultados_vivos, cfg_vivo):
@@ -305,17 +666,18 @@ def _aplicar_redaccion_e_interpretaciones_oliver_en_word(ruta_word, resultados_v
                 )
             break
 
-    marcadores_previos = ["Interpretación de la dotación:", "Interpretación de las inversiones:", "Interpretación del capital de trabajo:", "Interpretación del flujo privado:", "Interpretación de la evaluación social:"]
+    marcadores_previos = [
+        "Interpretación de la dotación",
+        "Interpretación de las inversiones",
+        "Interpretación del capital de trabajo",
+        "Interpretación financiera del flujo",
+        "Interpretación de la evaluación social",
+    ]
     for p in list(doc.paragraphs):
         if any(p.text.strip().startswith(mp) for mp in marcadores_previos):
             p._element.getparent().remove(p._element)
 
-    p_sec5 = None
-    p_sec6 = None
-    p_sec7 = None
-    p_sec8 = None
-    p_sec9 = None
-
+    p_sec5 = p_sec6 = p_sec7 = p_sec8 = p_sec9 = None
     for p in doc.paragraphs:
         if _es_linea_toc(p):
             continue
@@ -393,7 +755,8 @@ def _aplicar_redaccion_e_interpretaciones_oliver_en_word(ruta_word, resultados_v
         )
         p_sec9._p.addprevious(p_int_fs._p)
 
-    _limpiar_titulos_meta_pauta(doc)
+    _limpiar_titulos_y_portada(doc)
+    _formatear_bibliografia_apa(doc)
     _transformar_tablas_word_estilo_estudiante(doc)
 
     doc.save(ruta_word)
@@ -660,12 +1023,17 @@ def generar_entrega_completa_en_servidor(cfg_vivo, directorio_destino, aplicar_e
     carpeta_entrega = os.path.join(directorio_destino, apellidos)
     os.makedirs(carpeta_entrega, exist_ok=True)
 
+    ruta_plantilla_repo = _localizar_plantilla_ulagos()
+    if os.path.exists(ruta_plantilla_repo):
+        shutil.copy2(ruta_plantilla_repo, os.path.join(directorio_destino, "plantilla_hoja_carta_institucional_BLANCO.docx"))
+        shutil.copy2(ruta_plantilla_repo, os.path.join(carpeta_entrega, "plantilla_hoja_carta_institucional_BLANCO.docx"))
+
     r_exc1, r_exc2, r_exc3 = mod2.exportar_tres_excels_limpios(resultados_vivos, carpeta_entrega)
 
     ruta_word = os.path.join(carpeta_entrega, f"{apellidos}.docx")
     mod2.generar_informe_word_limpio(resultados_vivos, ruta_word, generar_pdf=False)
 
-    for img_temp in ["grafico_flujos_cartonvivo.png", "grafico_carton_ramirez.png"]:
+    for img_temp in ["grafico_flujos_cartonvivo.png", "grafico_carton_ramirez.png", "plantilla_hoja_carta_institucional_BLANCO.docx"]:
         p_img = os.path.join(carpeta_entrega, img_temp)
         if os.path.exists(p_img):
             try:
@@ -706,6 +1074,14 @@ def generar_entrega_completa_en_servidor(cfg_vivo, directorio_destino, aplicar_e
     if aplicar_estilo_oliver:
         _aplicar_redaccion_e_interpretaciones_oliver_en_word(ruta_word, resultados_vivos, cfg_vivo)
         _transformar_excels_estilo_oliver([r_exc1, r_exc2, r_exc3])
+    else:
+        doc_tmp = mod2.Document(ruta_word)
+        _limpiar_titulos_y_portada(doc_tmp)
+        _formatear_bibliografia_apa(doc_tmp)
+        doc_tmp.save(ruta_word)
+
+    if os.path.exists(ruta_plantilla_repo):
+        _aplicar_plantilla_institucional_ulagos(ruta_word, ruta_plantilla_repo)
 
     ruta_pdf, ruta_zip, pdf_ok = mod3.actualizar_pdf_y_zip_final(ruta_word)
     if not pdf_ok and shutil.which("libreoffice"):
@@ -719,6 +1095,21 @@ def generar_entrega_completa_en_servidor(cfg_vivo, directorio_destino, aplicar_e
                     r_full = os.path.join(carpeta_entrega, arch)
                     if os.path.isfile(r_full):
                         zf.write(r_full, arcname=os.path.join(apellidos, arch))
+        except Exception:
+            pass
+
+    # Sincronizar automáticamente la carpeta local del proyecto para que el Word local también quede actualizado
+    carpeta_local_script = os.path.dirname(os.path.abspath(__file__))
+    if os.path.abspath(directorio_destino) != os.path.abspath(carpeta_local_script):
+        try:
+            destino_local_entrega = os.path.join(carpeta_local_script, apellidos)
+            os.makedirs(destino_local_entrega, exist_ok=True)
+            for arch in os.listdir(carpeta_entrega):
+                origen_f = os.path.join(carpeta_entrega, arch)
+                if os.path.isfile(origen_f):
+                    shutil.copy2(origen_f, os.path.join(destino_local_entrega, arch))
+            if os.path.exists(ruta_zip):
+                shutil.copy2(ruta_zip, os.path.join(carpeta_local_script, os.path.basename(ruta_zip)))
         except Exception:
             pass
 
@@ -836,7 +1227,6 @@ cfg = st.session_state.cfg
 
 banner_placeholder = st.empty()
 
-# Botones rápidos de Presets debajo del banner para que nunca queden cortados arriba
 col_p1, col_p2, col_p3 = st.columns([1.2, 1.2, 1.2])
 if col_p1.button("Cargar Parámetros SNI 2026 (TSD 5,5%)", use_container_width=True):
     cfg["TASA_DESCUENTO_SOCIAL"] = 0.055
@@ -869,7 +1259,7 @@ if col_p3.button("Restaurar Valores por Defecto", use_container_width=True):
     st.rerun()
 
 modo_oliver_activo = st.checkbox(
-    "Incluir glosas de interpretación financiera y formato clásico universitario en Word y libros Excel",
+    "Incluir glosas de interpretación financiera, bibliografía APA y formato clásico universitario en Word y libros Excel",
     value=True,
 )
 
@@ -912,7 +1302,7 @@ def _parse_int(txt, default_val):
 st.markdown("<div class='sec-header'>1. PARÁMETROS GENERALES Y TASAS DE DESCUENTO</div>", unsafe_allow_html=True)
 cfg["NOMBRE_PROYECTO"] = fila_3_columnas("NOM", "Nombre del Proyecto:", cfg["NOMBRE_PROYECTO"], "(Nombre oficial que saldrá en la portada de la ULagos y en las conclusiones automáticas del Word)", es_texto=True)
 cfg["APELLIDOS_ENTREGA"] = fila_3_columnas("APE", "Apellidos Carpeta y ZIP:", cfg["APELLIDOS_ENTREGA"], "(Nombre exacto para la carpeta, el Word, el PDF y el archivo comprimido ZIP de entrega)", es_texto=True)
-cfg["INTEGRANTES"] = fila_3_columnas("INT", "Integrantes del Grupo:", cfg["INTEGRANTES"], "(Nombres completos en mayúsculas separados por coma para el bloque PROPUESTO POR de la portada)", es_texto=True)
+cfg["INTEGRANTES"] = fila_3_columnas("INT", "Integrantes del Grupo:", cfg["INTEGRANTES"], "(Nombres completos en mayúsculas separados por coma para el bloque INTEGRANTES de la portada)", es_texto=True)
 cfg["DOCENTE"] = fila_3_columnas("DOC", "Nombre Docente:", cfg["DOCENTE"], "(Nombre de la profesora guía del módulo Evaluación Integrada de Proyectos)", es_texto=True)
 cfg["HORIZONTE_ANIOS"] = fila_3_columnas("HOR", "Horizonte de Evaluación:", cfg["HORIZONTE_ANIOS"], "(Cantidad de años a proyectar en las tablas. La pauta exige evaluar a 10 años -> deja 10)", es_entero=True)
 cfg["IVA"] = fila_3_columnas("IVA", "Tasa de IVA (Impuesto al Valor Agregado):", cfg["IVA"], "(En Chile el IVA legal es 19% -> escribe 0.19. El programa lo usa para descontar el IVA automáticamente)")
@@ -1140,7 +1530,7 @@ if b_izq.button("RECALCULAR INDICADORES (VAN / TIR)", use_container_width=True):
     st.toast("Indicadores financieros actualizados en el panel superior.")
 
 if b_der.button("GENERAR CARPETA DE ENTREGA (.ZIP CON WORD, PDF Y 3 EXCELS)", type="primary", use_container_width=True):
-    with st.spinner("Ejecutando cálculos y empaquetando archivo ZIP de entrega..."):
+    with st.spinner("Ejecutando cálculos, aplicando plantilla institucional ULagos y empaquetando archivo ZIP..."):
         dir_temp = tempfile.mkdtemp()
         info = generar_entrega_completa_en_servidor(cfg, dir_temp, aplicar_estilo_oliver=modo_oliver_activo)
         with open(info["ruta_zip"], "rb") as fz:
@@ -1148,7 +1538,7 @@ if b_der.button("GENERAR CARPETA DE ENTREGA (.ZIP CON WORD, PDF Y 3 EXCELS)", ty
             st.session_state["ultimo_zip_nombre"] = os.path.basename(info["ruta_zip"])
 
 if "ultimo_zip_bytes" in st.session_state:
-    st.success(f"¡Paquete '{st.session_state['ultimo_zip_nombre']}' generado con éxito!")
+    st.success(f"Paquete '{st.session_state['ultimo_zip_nombre']}' generado con éxito (y actualizado en tu carpeta local).")
     st.download_button(
         label=f"DESCARGAR ARCHIVO {st.session_state['ultimo_zip_nombre']}",
         data=st.session_state["ultimo_zip_bytes"],
@@ -1156,3 +1546,15 @@ if "ultimo_zip_bytes" in st.session_state:
         mime="application/zip",
         use_container_width=True,
     )
+
+
+if __name__ == "__main__" and not os.environ.get("STREAMLIT_SERVER_PORT"):
+    # Si ejecutas `python consola_web.py` directo en consola, genera la carpeta local de inmediato
+    cfg_cli = copy.deepcopy(mod2.DEFAULTS)
+    cfg_cli["INVERSIONES_LISTA"] = copy.deepcopy(mod2.INVERSIONES_DEFAULT)
+    cfg_cli["COSTOS_VAR_LISTA"] = copy.deepcopy(mod2.COSTOS_VAR_DEFAULT)
+    cfg_cli["COSTOS_FIJOS_LISTA"] = copy.deepcopy(mod2.COSTOS_FIJOS_DEFAULT)
+    cfg_cli["PERSONAL_LISTA"] = copy.deepcopy(mod2.PERSONAL_DEFAULT)
+    carpeta_actual = os.path.dirname(os.path.abspath(__file__))
+    res_cli = generar_entrega_completa_en_servidor(cfg_cli, carpeta_actual, aplicar_estilo_oliver=True)
+    print(f"Entrega generada con portada ULagos y APA en: {res_cli['ruta_word']}")

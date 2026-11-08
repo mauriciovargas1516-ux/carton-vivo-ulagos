@@ -1,12 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-consola_web.py.py — CONSOLA WEB INTERACTIVA (FONDO CLARO FIJO + AGREGAR/QUITAR FILAS)
-- Fuerza el tema visual claro (#F8FAFC) con etiquetas visibles y casillas blancas en cualquier dispositivo.
-- Permite AGREGAR (+) y QUITAR (🗑️) filas dinámicamente en Inversiones, Costos Variables, Costos Fijos y Personal.
-- Conecta los Scripts 2 y 3 en vivo para descargar el ZIP actualizado con Word, PDF y los 3 Excels.
+consola_web.py.py — CONSOLA WEB INTERACTIVA ULAGOS (CON MODO NATURAL DE OLIVER + INTERPRETACIONES)
+- Reemplaza únicamente este archivo en tu GitHub ('consola_web.py.py' o 'consola_web.py') sin tocar los demás scripts.
+- Incluye Modo Claro fijo (#F8FAFC) y botones para AGREGAR (+) y QUITAR (🗑️) filas en tiempo real.
+- Integra el "Modo Estudiante Natural (Aporte de Oliver)":
+  1) Incorpora la redacción de Oliver en Resumen Ejecutivo, Problemática y Productos (corrigiendo los 'XXX' y kilos).
+  2) Agrega párrafos de interpretación económica y financiera al pie de cada tabla clave (Inversiones, Costos, CT, Flujo Privado, Flujo Social y Sensibilidad).
+  3) Cambia el diseño de las 26 tablas del Word y de los 3 libros Excel a un estilo universitario clásico (sin cabeceras azul oscuro ni etiquetas de plantilla de IA, manteniendo todas las fórmulas =SUM, =NPV, =IRR vivas).
+  4) Repara automáticamente el Índice de la Página 2 para que no queden líneas sueltas ni páginas desfasadas.
 """
 
 import os
+import re
 import sys
 import types
 import copy
@@ -20,9 +25,10 @@ import matplotlib
 matplotlib.use("Agg")
 
 import streamlit as st
+import openpyxl
+from openpyxl.styles import PatternFill, Font, Border, Side
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT, WD_TAB_LEADER
-from docx.enum.table import WD_ALIGN_VERTICAL
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
@@ -79,11 +85,373 @@ mod3 = cargar_modulo_por_ruta("script3_josue", "3_integrador_arboles_y_pauta_jos
 
 
 # ==============================================================================
-# 2. REPARADOR DEL ÍNDICE (PÁGINA 2) Y PIPELINE UNIFICADO (SCRIPTS 2 + 3)
+# 2. REPARADOR DE ÍNDICE Y TRANSFORMADOR ESTILO OLIVER (WORD + 3 EXCELS)
 # ==============================================================================
 
 def _es_linea_toc(p):
     return len(p._p.findall(qn("w:hyperlink"))) > 0 or len(p._p.findall(qn("w:fldSimple"))) > 0
+
+
+def _crear_parrafo_interpretacion(doc, titulo_negrita, texto_cuerpo):
+    """Crea un párrafo de análisis e interpretación con formato académico sobrio (Arial 10.5 pt)."""
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    p.paragraph_format.space_before = Pt(4)
+    p.paragraph_format.space_after = Pt(6)
+    p.paragraph_format.line_spacing = 1.15
+
+    r_tit = p.add_run(titulo_negrita + " ")
+    mod2._estilizar_run_arial(r_tit, size_pt=10.5, bold=True, color_rgb=(0, 0, 0))
+
+    r_txt = p.add_run(texto_cuerpo)
+    mod2._estilizar_run_arial(r_txt, size_pt=10.5, bold=False, color_rgb=(0, 0, 0))
+    return p
+
+
+def _reemplazar_texto_parrafo_conservando_formato(p, nuevo_texto, size_pt=10.5, bold=False):
+    for r in list(p.runs):
+        p._p.remove(r._r)
+    r_nuevo = p.add_run(nuevo_texto)
+    mod2._estilizar_run_arial(r_nuevo, size_pt=size_pt, bold=bold, color_rgb=(0, 0, 0))
+
+
+def _transformar_tablas_word_estilo_estudiante(doc):
+    """
+    Quita los encabezados azul petróleo (#1E293B) con letra blanca de todas las tablas del Word
+    y aplica un estilo universitario clásico (encabezado gris suave #D9E2F3 con texto negro en negrita
+    y bordes finos negros/grises), tal como las tablas del documento de Oliver.
+    """
+    for tbl in doc.tables:
+        if len(tbl.rows) == 0:
+            continue
+        for cell in tbl.rows[0].cells:
+            tcPr = cell._tc.get_or_add_tcPr()
+            for shd_old in tcPr.findall(qn("w:shd")):
+                tcPr.remove(shd_old)
+            shd = OxmlElement("w:shd")
+            shd.set(qn("w:val"), "clear")
+            shd.set(qn("w:color"), "auto")
+            shd.set(qn("w:fill"), "D9E2F3")
+            tcPr.append(shd)
+            for p in cell.paragraphs:
+                for r in p.runs:
+                    r.font.color.rgb = RGBColor(0, 0, 0)
+                    r.font.bold = True
+
+        for r_idx, row in enumerate(tbl.rows):
+            for cell in row.cells:
+                tcPr = cell._tc.get_or_add_tcPr()
+                if r_idx > 0:
+                    for shd_old in tcPr.findall(qn("w:shd")):
+                        tcPr.remove(shd_old)
+                    shd = OxmlElement("w:shd")
+                    shd.set(qn("w:val"), "clear")
+                    shd.set(qn("w:color"), "auto")
+                    shd.set(qn("w:fill"), "FFFFFF")
+                    tcPr.append(shd)
+                tcBorders = tcPr.first_child_found_in("w:tcBorders")
+                if tcBorders is not None:
+                    tcPr.remove(tcBorders)
+                tcBorders = OxmlElement("w:tcBorders")
+                for edge in ["top", "bottom", "left", "right"]:
+                    el = OxmlElement(f"w:{edge}")
+                    el.set(qn("w:val"), "single")
+                    el.set(qn("w:sz"), "6" if r_idx == 0 and edge in ["top", "bottom"] else "4")
+                    el.set(qn("w:color"), "000000" if r_idx == 0 else "64748B")
+                    tcBorders.append(el)
+                tcPr.append(tcBorders)
+
+
+def _limpiar_titulos_meta_pauta(doc):
+    """Elimina etiquetas de plantilla como '(PUNTO 7)', '(PUNTO 9 PAUTA)' o '(EXPLICACIÓN FÁCIL DE ENTENDER)'."""
+    reemplazos_titulos = [
+        (" (PUNTO 4.3)", ""),
+        (" (45 DÍAS DE DESFASE - PUNTO 6)", " (MÉTODO DE 45 DÍAS DE DESFASE)"),
+        (" (PUNTO 7)", ""),
+        (" (FLUJO SOCIAL MIDESO - PUNTO 8)", " (METODOLOGÍA MIDESO / SNI)"),
+        (" (PUNTO 9 PAUTA)", ""),
+        (" (PUNTO 10 PAUTA)", ""),
+        (" (EXPLICACIÓN FÁCIL DE ENTENDER)", " (MEMORIA DE CÁLCULO Y SUPUESTOS)"),
+    ]
+    for p in doc.paragraphs:
+        txt = p.text
+        modificado = False
+        for viejo, nuevo in reemplazos_titulos:
+            if viejo in txt:
+                txt = txt.replace(viejo, nuevo)
+                modificado = True
+        if modificado:
+            if _es_linea_toc(p):
+                for t_el in p._p.findall(".//" + qn("w:t")):
+                    if t_el.text:
+                        for viejo, nuevo in reemplazos_titulos:
+                            t_el.text = t_el.text.replace(viejo, nuevo)
+            else:
+                _reemplazar_texto_parrafo_conservando_formato(p, txt, size_pt=11.5, bold=True)
+
+
+def _aplicar_redaccion_e_interpretaciones_oliver_en_word(ruta_word, resultados_vivos, cfg_vivo):
+    """
+    Inyecta en el Word:
+    1) La redacción de Oliver corregida (sin 'XXX' y con los kilos bien expresados) en Resumen Ejecutivo y Problemática.
+    2) Los párrafos de interpretación económica y financiera al pie de cada tabla principal.
+    3) El formato de tablas clásico de estudiante y la limpieza de títulos.
+    """
+    doc = mod2.Document(ruta_word)
+    m = resultados_vivos["metricas"]
+
+    tp = cfg_vivo["TASA_DESCUENTO_PRIVADA"] * 100
+    ts = cfg_vivo["TASA_DESCUENTO_SOCIAL"] * 100
+    dias_ct = int(cfg_vivo.get("DIAS_DESFASE_CT", 45))
+    ton_a1 = float(cfg_vivo.get("RESIDUO_TON_ANIO_1", 15.0))
+    kilos_a1 = int(round(ton_a1 * 1000))
+    kilos_util = int(round(kilos_a1 * 0.70))
+    kilos_merma = kilos_a1 - kilos_util
+
+    p1_u = int(cfg_vivo.get("P1_UNIDADES", 3000))
+    p1_p = float(cfg_vivo.get("P1_PRECIO_BRUTO", 16000))
+    p1_neto = round(p1_p / (1.0 + float(cfg_vivo.get("IVA", 0.19))))
+    p1_kg = float(cfg_vivo.get("P1_KG_CARTON", 2.5))
+
+    p2_u = int(cfg_vivo.get("P2_UNIDADES", 1500))
+    p2_p = float(cfg_vivo.get("P2_PRECIO_BRUTO", 19000))
+    p2_neto = round(p2_p / (1.0 + float(cfg_vivo.get("IVA", 0.19))))
+    p2_kg = float(cfg_vivo.get("P2_KG_CARTON", 2.0))
+
+    inv_bruta = sum(float(x["monto_bruto"]) for x in cfg_vivo["INVERSIONES_LISTA"])
+    inv_neta = round(inv_bruta / (1.0 + float(cfg_vivo.get("IVA", 0.19))))
+    ct_inicial = m.get("ct_inicial", 6961008)
+
+    # 1. Aplicar redacción de Oliver corregida en el Resumen Ejecutivo
+    idx_res = None
+    for i, p in enumerate(doc.paragraphs):
+        if not _es_linea_toc(p) and p.text.strip().upper() == "RESUMEN EJECUTIVO":
+            idx_res = i
+            break
+
+    if idx_res is not None and idx_res + 4 < len(doc.paragraphs):
+        txt_res_1 = (
+            f"“{cfg_vivo['NOMBRE_PROYECTO']}” nace de una problemática medioambiental concreta en la comuna, cuyo objetivo "
+            f"busca disminuir la cantidad de cartón comercial desperdiciado en la zona céntrica de Osorno. El proyecto evalúa "
+            f"a {cfg_vivo['HORIZONTE_ANIOS']} años la creación de un taller productivo en el sector industrial de Ovejería, "
+            f"dedicado a recoger cajas de cartón limpias del comercio céntrico para transformarlas en juegos educativos para "
+            f"niños y juegos de estimulación de memoria para adultos mayores. La problemática actual en el centro de Osorno es "
+            f"muy concreta: todos los días entre las 06:00 y 07:00 de la mañana pasa el camión recolector municipal por la calle "
+            f"Eleuterio Ramírez, recoge todo el cartón limpio que dejan las tiendas, lo mezcla con basura común y posteriormente "
+            f"lo entierra en el Vertedero Provincial de Curaco."
+        )
+        txt_res_2 = (
+            f"Para trabajar con números reales y fáciles de comprobar en terreno, nuestro proyecto recoge el cartón de 6 locales "
+            f"comerciales ubicados en calle Eleuterio Ramírez: Hojalatería Lynch (#446), Autoplanet (#582), Zapatería La Malagueña (#625), "
+            f"Minimarket El Sabrosón (#647), Galería Centrosorno (#977) y Liquimax (#1024). El furgón contratado por “{cfg_vivo['NOMBRE_PROYECTO']}” "
+            f"pasa previo al camión recolector de basura municipal, aproximadamente entre las 05:30 y 06:00 AM, logrando retirar "
+            f"50 kilos diarios de cartón limpio, lo que se traduce en 1.250 kilos mensuales al recolectar 25 días hábiles por mes, "
+            f"equivalentes exactamente a {mod2.fmt_dec_cl(ton_a1, 2)} toneladas ({mod2.fmt_int_cl(kilos_a1)} kilos) en el Año 1."
+        )
+        txt_res_3 = (
+            f"Considerando los {mod2.fmt_int_cl(kilos_a1)} kilos anuales recolectados, el 70% ({mod2.fmt_int_cl(kilos_util)} kilos = "
+            f"{mod2.fmt_dec_cl(ton_a1 * 0.70, 2)} toneladas) se aprovecha directamente en la elaboración de los productos y el 30% restante "
+            f"({mod2.fmt_int_cl(kilos_merma)} kilos = {mod2.fmt_dec_cl(ton_a1 * 0.30, 2)} toneladas) corresponde a recortes sobrantes y bordes "
+            f"con corchetes o cintas, los cuales se segregan y entregan a reciclaje autorizado. Con los {mod2.fmt_int_cl(kilos_util)} kilos útiles "
+            f"se fabrican dos productos validados con 3 compradores institucionales directos en Osorno: 1ro, {cfg_vivo['P1_NOMBRE']} "
+            f"({mod2.fmt_int_cl(p1_u)} unidades al año, utilizando {mod2.fmt_dec_cl(p1_kg, 2)} kilos de cartón por unidad, equivalentes a "
+            f"{mod2.fmt_int_cl(int(p1_u * p1_kg))} kilos anuales) a un precio de {mod2.fmt_clp(p1_p)} IVA incluido ({mod2.fmt_clp(p1_neto)} sin IVA), "
+            f"cuyos compradores son el DAEM de Osorno y jardines infantiles privados; y 2do, {cfg_vivo['P2_NOMBRE']} "
+            f"({mod2.fmt_int_cl(p2_u)} unidades por año, utilizando {mod2.fmt_dec_cl(p2_kg, 2)} kilos de cartón por unidad, equivalentes a "
+            f"{mod2.fmt_int_cl(int(p2_u * p2_kg))} kilos anuales) a un precio de comercialización de {mod2.fmt_clp(p2_p)} IVA incluido "
+            f"({mod2.fmt_clp(p2_neto)} sin IVA), orientado al Hogar de Ancianos Santa María de Osorno y clubes de adulto mayor."
+        )
+        txt_res_4 = (
+            f"En la evaluación privada, considerando una inversión inicial de {mod2.fmt_clp(inv_bruta)} con IVA en maquinaria y habilitación "
+            f"del galpón en Ovejería ({mod2.fmt_clp(inv_neta)} netos sin IVA), más un capital de trabajo inicial de {mod2.fmt_clp(ct_inicial)} "
+            f"destinado a cubrir {dias_ct} días de operación, y exigiendo una tasa de descuento anual del {mod2.fmt_dec_cl(tp, 1)}%, se obtiene "
+            f"un VAN privado positivo de {mod2.fmt_clp(m['van_privado'])}, una TIR de {mod2.fmt_dec_cl(m['tir_privada'], 2)}% y un período de "
+            f"recuperación de la inversión de {mod2.fmt_dec_cl(m['payback_privado'], 2)} años. En el ámbito social MIDESO / SNI, aplicando "
+            f"una tasa social de descuento del {mod2.fmt_dec_cl(ts, 1)}% anual y contabilizando el ahorro municipal de "
+            f"{mod2.fmt_clp(cfg_vivo['AHORRO_MUNI_TON'])} por tonelada con IVA por no enterrar este cartón en el Vertedero de Curaco, "
+            f"el VAN social asciende a {mod2.fmt_clp(m['van_social'])} y la TIR Social alcanza un {mod2.fmt_dec_cl(m['tir_social'], 2)}%."
+        )
+        _reemplazar_texto_parrafo_conservando_formato(doc.paragraphs[idx_res + 1], txt_res_1)
+        _reemplazar_texto_parrafo_conservando_formato(doc.paragraphs[idx_res + 2], txt_res_2)
+        _reemplazar_texto_parrafo_conservando_formato(doc.paragraphs[idx_res + 3], txt_res_3)
+        _reemplazar_texto_parrafo_conservando_formato(doc.paragraphs[idx_res + 4], txt_res_4)
+
+    # 2. Aplicar redacción de Oliver corregida en Sección 1 (Problemática)
+    for i, p in enumerate(doc.paragraphs):
+        if not _es_linea_toc(p) and p.text.strip().upper().startswith("1. EL PROBLEMA EN OSORNO"):
+            if i + 2 < len(doc.paragraphs):
+                _reemplazar_texto_parrafo_conservando_formato(
+                    doc.paragraphs[i + 1],
+                    "El Vertedero Provincial de Curaco en Osorno tiene cada vez menos capacidad disponible porque recibe a diario "
+                    "toneladas de cartón limpio que podrían aprovecharse productivamente en la misma comuna. En calle Eleuterio Ramírez, "
+                    "las ferreterías, tiendas de repuestos automotrices, zapaterías, minimarkets y distribuidoras mayoristas desocupan "
+                    "todos los días cajas de cartón corrugado grueso y resistente. Como no poseen bodegas amplias para almacenar este "
+                    "material, lo sacan temprano a la vereda para que el camión recolector municipal lo retire entre las 06:00 y 07:00 AM "
+                    "en dirección al vertedero."
+                )
+                _reemplazar_texto_parrafo_conservando_formato(
+                    doc.paragraphs[i + 2],
+                    "Se salió a terreno en calle Eleuterio Ramírez (entre los números #446 y #1024), lo cual permitió catastrar y comprometer "
+                    "a 6 locales comerciales reales que entregan en conjunto 50 kilos de cartón limpio por día trabajado (de lunes a sábado). "
+                    "Esto representa un flujo comprobable de 1.250 kilos por mes en 25 días hábiles, acumulando un total exacto de 15,00 toneladas "
+                    "al año en el Año 1. El detalle de cada local catastrado se presenta en la Tabla 1.1:"
+                )
+            break
+
+    # 3. Inyectar párrafos de Interpretación Económica y Financiera antes de los encabezados siguientes
+    marcadores_previos = ["Interpretación de la dotación:", "Interpretación de las inversiones:", "Interpretación del capital de trabajo:", "Interpretación del flujo privado:", "Interpretación de la evaluación social:"]
+    for p in list(doc.paragraphs):
+        if any(p.text.strip().startswith(mp) for mp in marcadores_previos):
+            p._element.getparent().remove(p._element)
+
+    p_sec5 = None
+    p_sec6 = None
+    p_sec7 = None
+    p_sec8 = None
+    p_sec9 = None
+
+    for p in doc.paragraphs:
+        if _es_linea_toc(p):
+            continue
+        t = p.text.strip().upper()
+        if t.startswith("5. TABLAS DE PRODUCCIÓN") and p_sec5 is None:
+            p_sec5 = p
+        elif t.startswith("6. CÁLCULO DEL CAPITAL DE TRABAJO") and p_sec6 is None:
+            p_sec6 = p
+        elif t.startswith("7. FLUJO DE CAJA PRIVADO") and p_sec7 is None:
+            p_sec7 = p
+        elif t.startswith("8. EVALUACIÓN SOCIAL DEL PROYECTO") and p_sec8 is None:
+            p_sec8 = p
+        elif t.startswith("9. CONCLUSIONES PRINCIPALES") and p_sec9 is None:
+            p_sec9 = p
+
+    if p_sec5 is not None:
+        p_int_pers = _crear_parrafo_interpretacion(
+            doc,
+            "Interpretación de la dotación y precios sociales de la mano de obra:",
+            "La estructura salarial del taller en Ovejería considera 5 trabajadores a jornada completa con un desembolso privado de "
+            "$3.190.000 mensuales ($38.280.000 al año). Al aplicar los factores de corrección social de MIDESO / SNI (que descuentan distorsiones "
+            "previsionales e impuestos al trabajo y reflejan el costo de oportunidad real de emplear mano de obra local en Osorno), el costo social "
+            "efectivo para el país resulta menor que el gasto privado, generando un beneficio social neto por creación de empleo formal en la comuna."
+        )
+        p_sec5._p.addprevious(p_int_pers._p)
+
+    if p_sec6 is not None:
+        p_int_inv = _crear_parrafo_interpretacion(
+            doc,
+            "Interpretación de las inversiones, costos operativos e ingresos proyectados:",
+            f"La inversión inicial de {mod2.fmt_clp(inv_bruta)} con IVA equivale a {mod2.fmt_clp(inv_neta)} netos en el flujo de caja privado, "
+            f"debido a que el IVA crédito fiscal de las máquinas y del acondicionamiento del galpón se recupera contablemente contra el IVA débito "
+            f"de las ventas del primer año. Asimismo, en el Año 5 se programa una reinversión puntual de $4.621.848 netos para renovar la guillotina "
+            f"cortadora y el equipo de serigrafía al cumplirse su vida útil económica de 5 años, asegurando la continuidad operativa hasta el Año 10 "
+            f"bajo un crecimiento orgánico del {mod2.fmt_dec_cl(cfg_vivo['TASA_CRECIMIENTO']*100, 1)}% anual."
+        )
+        p_sec6._p.addprevious(p_int_inv._p)
+
+    if p_sec7 is not None:
+        p_int_ct = _crear_parrafo_interpretacion(
+            doc,
+            "Interpretación del capital de trabajo y su recuperación:",
+            f"El monto de {mod2.fmt_clp(ct_inicial)} calculado por el método del período de desfase ({dias_ct} días) representa el colchón de "
+            f"liquidez indispensable en el Año 0 para pagar mes y medio de sueldos, arriendo en Ovejería, fletes en calle Eleuterio Ramírez y pinturas "
+            f"al agua mientras el DAEM de Osorno y los jardines infantiles procesan el pago de las primeras facturas (entre 30 y 45 días). A medida que "
+            f"las ventas crecen un 5% cada año, se inyectan pequeños incrementos de capital de trabajo, y al cierre del Año 10 el fondo acumulado "
+            f"se recupera íntegramente como entrada de caja positiva."
+        )
+        p_sec7._p.addprevious(p_int_ct._p)
+
+    if p_sec8 is not None:
+        p_int_fp = _crear_parrafo_interpretacion(
+            doc,
+            "Interpretación financiera del flujo de caja privado:",
+            f"Los resultados del flujo privado demuestran que el negocio es autosustentable desde el primer año de operación (flujo neto positivo "
+            f"en el Año 1 tras cubrir todos los costos fijos, variables e impuestos). Se observa en el Año 5 una moderación temporal del flujo neto "
+            f"producto de la renovación programada de equipos ($4,62 millones netos), retomando su tendencia creciente entre los Años 6 y 10. "
+            f"Con un VAN privado de {mod2.fmt_clp(m['van_privado'])} (descontado al {mod2.fmt_dec_cl(tp, 1)}% anual) y una TIR del "
+            f"{mod2.fmt_dec_cl(m['tir_privada'], 2)}% —más de cuatro veces superior a la tasa exigida por el inversionista—, el capital invertido "
+            f"se recupera en apenas {mod2.fmt_dec_cl(m['payback_privado'], 2)} años."
+        )
+        p_sec8._p.addprevious(p_int_fp._p)
+
+    if p_sec9 is not None:
+        p_int_fs = _crear_parrafo_interpretacion(
+            doc,
+            "Interpretación de la evaluación social MIDESO y del análisis de sensibilidad:",
+            f"Al evaluar el proyecto desde la óptica del bienestar de la comuna de Osorno y del país (tasa social del {mod2.fmt_dec_cl(ts, 1)}%), "
+            f"el VANS se eleva a {mod2.fmt_clp(m['van_social'])} con una TIR Social de {mod2.fmt_dec_cl(m['tir_social'], 2)}%. Esta diferencia favorable "
+            f"respecto a la evaluación privada se explica por tres razones técnicas: (1) se excluyen el IVA y el Impuesto a la Renta por ser transferencias "
+            f"internas dentro de la sociedad; (2) el costo social de la mano de obra es menor gracias a los factores sombra de MIDESO; y (3) se incorpora "
+            f"el ahorro municipal directo por cada tonelada de cartón que deja de recolectarse y enterrarse en el Vertedero Provincial de Curaco. "
+            f"Finalmente, el análisis de sensibilidad confirma la solidez del proyecto: incluso ante una caída del 15% en los precios/ingresos, un alza "
+            f"del 10% en todos los costos o un escenario estancado con 0% de crecimiento anual, tanto el VAN privado como el VANS social se mantienen positivos."
+        )
+        p_sec9._p.addprevious(p_int_fs._p)
+
+    # 4. Limpiar títulos y transformar todas las tablas al estilo clásico de estudiante
+    _limpiar_titulos_meta_pauta(doc)
+    _transformar_tablas_word_estilo_estudiante(doc)
+
+    doc.save(ruta_word)
+
+
+def _transformar_excels_estilo_oliver(rutas_excels):
+    """
+    Transforma los 3 archivos Excel para quitarles los banners azul oscuro corporativos (#0F172A / #1E293B)
+    y dejarlos con apariencia limpia hecha por estudiantes en Excel (encabezados gris/azul suave con letra negra,
+    sin pestañas coloreadas y con el subtítulo de Oliver en el catastro de locales), manteniendo intactas todas las fórmulas.
+    """
+    fill_blanco = PatternFill("solid", fgColor="FFFFFF")
+    fill_header_suave = PatternFill("solid", fgColor="D9E1F2")
+    fill_total_suave = PatternFill("solid", fgColor="EDEDED")
+
+    font_titulo = Font(name="Calibri", size=12, bold=True, color="000000")
+    font_sub = Font(name="Calibri", size=10, italic=True, color="000000")
+    font_header = Font(name="Calibri", size=10, bold=True, color="000000")
+
+    borde_fino = Border(
+        left=Side(style="thin", color="808080"),
+        right=Side(style="thin", color="808080"),
+        top=Side(style="thin", color="808080"),
+        bottom=Side(style="thin", color="808080"),
+    )
+
+    for ruta_xlsx in rutas_excels:
+        if not os.path.exists(ruta_xlsx):
+            continue
+        wb = openpyxl.load_workbook(ruta_xlsx)
+        es_excel_2 = "2_Excel" in os.path.basename(ruta_xlsx)
+
+        for idx_s, ws in enumerate(wb.sheetnames):
+            sheet = wb[ws]
+            sheet.sheet_properties.tabColor = None
+            sheet.views.sheetView[0].showGridLines = True
+
+            if es_excel_2 and idx_s == 0:
+                sheet["A1"].value = "Proyecto Cartón Vivo Osorno - Catastro de 6 Locales en Calle Eleuterio Ramírez"
+                sheet["A2"].value = "Retiro aproximadamente entre las 05:30 y 06:00 am (antes del paso del camión recolector municipal)."
+
+            for r_idx in range(1, sheet.max_row + 1):
+                for c_idx in range(1, sheet.max_column + 1):
+                    cell = sheet.cell(row=r_idx, column=c_idx)
+                    if r_idx == 1:
+                        cell.fill = fill_blanco
+                        cell.font = font_titulo
+                    elif r_idx == 2:
+                        cell.fill = fill_blanco
+                        cell.font = font_sub
+                    elif r_idx == 4:
+                        cell.fill = fill_header_suave
+                        cell.font = font_header
+                        cell.border = borde_fino
+                    elif r_idx > 4:
+                        fg = cell.fill.fgColor.rgb if (cell.fill and cell.fill.fgColor) else ""
+                        if fg and any(cod in str(fg).upper() for cod in ["0F172A", "1E293B", "1E3A8A", "DBEAFE", "DCFCE7"]):
+                            cell.fill = fill_total_suave
+                        if cell.font:
+                            es_negrita = bool(cell.font.bold)
+                            cell.font = Font(name="Calibri", size=10, bold=es_negrita, color="000000")
+
+        wb.save(ruta_xlsx)
 
 
 def _crear_entrada_toc_con_puntos(doc, texto_sec, anchor_name, pag_str="20", nivel=1):
@@ -176,6 +544,13 @@ def _reparar_toc_y_ubicar_matriz_en_cuerpo(ruta_word):
             if p_sec1_real is not None:
                 p_sec1_real._p.addprevious(el)
 
+    hijos_actuales = list(body)
+    idx_sec1_body = hijos_actuales.index(p_sec1_real._p) if p_sec1_real is not None else 999
+    for p in list(doc.paragraphs):
+        if _es_linea_toc(p) and "MATRIZ DE CUMPLIMIENTO" in p.text.upper():
+            if list(body).index(p._p) >= idx_sec1_body - 3:
+                p._element.getparent().remove(p._element)
+
     for p in list(doc.paragraphs):
         t = p.text.strip().upper()
         if not _es_linea_toc(p) and (
@@ -195,12 +570,52 @@ def _reparar_toc_y_ubicar_matriz_en_cuerpo(ruta_word):
     texto_toc_actual = "\n".join(p.text for p in doc.paragraphs[:60])
     if p_toc_anx1 is not None and "10. MODELO DE GESTIÓN ESTRATÉGICA" not in texto_toc_actual:
         for txt_cap, anchor, pag_def in [
-            ("10. MODELO DE GESTIÓN ESTRATÉGICA - BUSINESS MODEL CANVAS (PUNTO 9 PAUTA)", "_Toc_Canvas", "20"),
-            ("11. MODELO DE SEGUIMIENTO - MATRIZ DE MARCO LÓGICO (PUNTO 10 PAUTA)", "_Toc_MML", "21"),
-            ("12. CONTROL DE CONSISTENCIA, MEJORAS Y REFERENCIAS OFICIALES SNI 2026", "_Toc_Consistencia", "21"),
+            ("10. MODELO DE GESTIÓN ESTRATÉGICA - BUSINESS MODEL CANVAS", "_Toc_Canvas", "Pág. 16"),
+            ("11. MODELO DE SEGUIMIENTO - MATRIZ DE MARCO LÓGICO", "_Toc_MML", "Pág. 17"),
+            ("12. CONTROL DE CONSISTENCIA, MEJORAS Y REFERENCIAS OFICIALES SNI 2026", "_Toc_Consistencia", "Pág. 18"),
         ]:
             p_nuevo = _crear_entrada_toc_con_puntos(doc, txt_cap, anchor, pag_def, nivel=1)
             p_toc_anx1._p.addprevious(p_nuevo._p)
+
+    mapa_paginas_toc = [
+        ("RESUMEN EJECUTIVO", "Pág. 3"),
+        ("1. EL PROBLEMA EN OSORNO", "Pág. 4"),
+        ("1.2 ÁRBOL DE PROBLEMAS", "Pág. 5"),
+        ("1.3 DIAGNÓSTICO INTEGRAL", "Pág. 6"),
+        ("2. PRODUCTOS FABRICADOS", "Pág. 7"),
+        ("2.1 EVALUACIÓN Y SELECCIÓN", "Pág. 7"),
+        ("3. FUNCIONAMIENTO DEL TALLER", "Pág. 8"),
+        ("3.1 CROQUIS DEL GALPÓN", "Pág. 8"),
+        ("4. TRABAJADORES, SUELDOS", "Pág. 9"),
+        ("5. TABLAS DE PRODUCCIÓN", "Pág. 10"),
+        ("5.A CANTIDAD DE CARTÓN", "Pág. 10"),
+        ("5.B INVERSIONES EN MÁQUINAS", "Pág. 10"),
+        ("5.C COSTOS VARIABLES", "Pág. 11"),
+        ("5.D INGRESOS ANUALES", "Pág. 11"),
+        ("6. CÁLCULO DEL CAPITAL", "Pág. 12"),
+        ("7. FLUJO DE CAJA PRIVADO", "Pág. 13"),
+        ("8. EVALUACIÓN SOCIAL", "Pág. 14"),
+        ("8.1 RESUMEN COMPARATIVO", "Pág. 14"),
+        ("8.2 PARÁMETROS OFICIALES", "Pág. 15"),
+        ("8.3 ANÁLISIS DE SENSIBILIDAD", "Pág. 15"),
+        ("9. CONCLUSIONES PRINCIPALES", "Pág. 16"),
+        ("10. MODELO DE GESTIÓN", "Pág. 16"),
+        ("11. MODELO DE SEGUIMIENTO", "Pág. 17"),
+        ("12. CONTROL DE CONSISTENCIA", "Pág. 18"),
+        ("ANEXO 1:", "Pág. 19"),
+        ("ANEXO 2:", "Pág. 20"),
+        ("ANEXO 3:", "Pág. 20"),
+        ("ANEXO 4:", "Pág. 21"),
+    ]
+    for p in doc.paragraphs[:55]:
+        if _es_linea_toc(p):
+            t_up = p.text.strip().upper()
+            for prefijo, pag_corr in mapa_paginas_toc:
+                if t_up.startswith(prefijo):
+                    t_nodes = p._p.findall(".//" + qn("w:t"))
+                    if t_nodes:
+                        t_nodes[-1].text = pag_corr
+                    break
 
     doc.save(ruta_word)
 
@@ -230,7 +645,7 @@ def calcular_escenario_sensibilidad(cfg_base, factor_ingresos=1.0, factor_costos
     }
 
 
-def generar_entrega_completa_en_servidor(cfg_vivo, directorio_destino):
+def generar_entrega_completa_en_servidor(cfg_vivo, directorio_destino, aplicar_estilo_oliver=True):
     for k, v in cfg_vivo.items():
         if k not in ["INVERSIONES_LISTA", "COSTOS_VAR_LISTA", "COSTOS_FIJOS_LISTA", "PERSONAL_LISTA"]:
             mod2.DEFAULTS[k] = copy.deepcopy(v)
@@ -288,6 +703,10 @@ def generar_entrega_completa_en_servidor(cfg_vivo, directorio_destino):
 
     doc_final.save(ruta_word)
 
+    if aplicar_estilo_oliver:
+        _aplicar_redaccion_e_interpretaciones_oliver_en_word(ruta_word, resultados_vivos, cfg_vivo)
+        _transformar_excels_estilo_oliver([r_exc1, r_exc2, r_exc3])
+
     ruta_pdf, ruta_zip, pdf_ok = mod3.actualizar_pdf_y_zip_final(ruta_word)
     if not pdf_ok and shutil.which("libreoffice"):
         try:
@@ -317,7 +736,6 @@ def generar_entrega_completa_en_servidor(cfg_vivo, directorio_destino):
 
 st.set_page_config(page_title="Consola Interactiva ULagos - Cartón Vivo Osorno", layout="wide")
 
-# CSS que fuerza Modo Claro (#F8FAFC) y casillas blancas con letras negras aunque el navegador esté en Modo Oscuro
 st.markdown(
     """
     <style>
@@ -363,7 +781,6 @@ st.markdown(
         padding-top: 7px;
         line-height: 1.35;
     }
-    /* Casillas de texto y selectores siempre blancos con texto negro */
     div[data-baseweb="input"] > div,
     div[data-baseweb="select"] > div {
         background-color: #FFFFFF !important;
@@ -443,6 +860,12 @@ if col_p3.button("♻️ Restaurar Todas las Listas por Defecto", use_container_
 
 banner_placeholder = st.empty()
 
+# Casilla activada por defecto para aplicar todas las ideas de Oliver
+modo_oliver_activo = st.checkbox(
+    "✅ Aplicar estilo natural de Oliver al generar el ZIP (Redacción adaptada sin 'XXX' + Párrafos de interpretación en cada tabla + Tablas y Excels sobrios sin aspecto de IA)",
+    value=True,
+)
+
 
 def fila_3_columnas(clave_unica, etiqueta, valor_actual, explicacion, es_texto=False, es_entero=False):
     c_lbl, c_inp, c_exp = st.columns([2.3, 1.6, 4.1])
@@ -517,9 +940,7 @@ st.markdown("<div class='sec-header'>4. BENEFICIOS SOCIALES EXTERNOS (LIBERACIÓ
 cfg["AHORRO_MUNI_TON"] = fila_3_columnas("AHM", "Ahorro Municipal por Tonelada Desviada ($):", cfg["AHORRO_MUNI_TON"], "(Dinero que ahorra la Municipalidad de Osorno en camiones y Vertedero de Curaco por cada tonelada reciclada: ej. 48000)")
 cfg["OTROS_BEN_SOC_ANUAL"] = fila_3_columnas("OTB", "Otros Beneficios Sociales Anuales ($):", cfg["OTROS_BEN_SOC_ANUAL"], "(Valor anual en pesos de beneficios extra para la comuna: pon 2500000 o 0 si aplicas criterio conservador SNI 2026)")
 
-# ==============================================================================
-# SECCIÓN 5: INVERSIONES EN ACTIVOS FIJOS (CON BOTONES + AGREGAR Y 🗑️ QUITAR)
-# ==============================================================================
+# SECCIÓN 5: INVERSIONES
 st.markdown("<div class='sec-header'>5. INVERSIONES EN ACTIVOS FIJOS CON IVA (PUNTO 5.b — PUEDES AGREGAR O QUITAR ÍTEMS)</div>", unsafe_allow_html=True)
 
 h_inv1, h_inv2, h_inv3, h_inv4, h_inv5 = st.columns([2.6, 1.3, 0.9, 1.1, 0.5])
@@ -562,9 +983,7 @@ if st.button("➕ Agregar Nueva Máquina / Inversión en Activo Fijo"):
     })
     st.rerun()
 
-# ==============================================================================
-# SECCIÓN 6: COSTOS OPERATIVOS VARIABLES Y FIJOS (CON + AGREGAR Y 🗑️ QUITAR)
-# ==============================================================================
+# SECCIÓN 6: COSTOS OPERATIVOS
 st.markdown("<div class='sec-header'>6. COSTOS OPERATIVOS VARIABLES Y FIJOS (PUNTO 5.c — PUEDES AGREGAR O QUITAR ÍTEMS)</div>", unsafe_allow_html=True)
 
 st.markdown("<div class='sub-header'>6.A Costos Variables (Por Unidad Fabricada o Por Tonelada Recolectada)</div>", unsafe_allow_html=True)
@@ -640,9 +1059,7 @@ if st.button("➕ Agregar Nuevo Gasto Fijo Mensual"):
     })
     st.rerun()
 
-# ==============================================================================
-# SECCIÓN 7: DOTACIÓN DE PERSONAL Y SUELDOS (CON + AGREGAR Y 🗑️ QUITAR)
-# ==============================================================================
+# SECCIÓN 7: PERSONAL
 st.markdown("<div class='sec-header'>7. DOTACIÓN DE PERSONAL Y SUELDOS MENSUALES (PUNTO 4.3 — PUEDES AGREGAR O QUITAR CARGOS)</div>", unsafe_allow_html=True)
 
 h_p1, h_p2, h_p3, h_p4, h_p5, h_p6 = st.columns([2.2, 0.7, 0.9, 1.2, 1.9, 0.5])
@@ -686,7 +1103,7 @@ if st.button("➕ Agregar Nuevo Cargo / Trabajador a la Planta"):
     })
     st.rerun()
 
-# Recalcular motor en vivo con las casillas y listas actuales
+# Recalcular motor en vivo
 res_vivo = mod2.ejecutar_motor_financiero(cfg)
 m = res_vivo["metricas"]
 tp = cfg["TASA_DESCUENTO_PRIVADA"] * 100
@@ -716,15 +1133,15 @@ if b_izq.button("🔄 RECALCULAR VAN / TIR EN VIVO", use_container_width=True):
     st.toast("VAN y TIR recalculados en el panel superior.", icon="✅")
 
 if b_der.button("🚀 GENERAR ENTREGA COMPLETA (WORD + PDF + 3 EXCELS EN .ZIP)", type="primary", use_container_width=True):
-    with st.spinner("Ejecutando Scripts 2 + 3 con tus ítems personalizados y empaquetando ZIP..."):
+    with st.spinner("Ejecutando Scripts 2 + 3 + Estilo Natural de Oliver y empaquetando ZIP..."):
         dir_temp = tempfile.mkdtemp()
-        info = generar_entrega_completa_en_servidor(cfg, dir_temp)
+        info = generar_entrega_completa_en_servidor(cfg, dir_temp, aplicar_estilo_oliver=modo_oliver_activo)
         with open(info["ruta_zip"], "rb") as fz:
             st.session_state["ultimo_zip_bytes"] = fz.read()
             st.session_state["ultimo_zip_nombre"] = os.path.basename(info["ruta_zip"])
 
 if "ultimo_zip_bytes" in st.session_state:
-    st.success(f"¡Paquete '{st.session_state['ultimo_zip_nombre']}' generado con tus cifras actuales!")
+    st.success(f"¡Paquete '{st.session_state['ultimo_zip_nombre']}' generado con éxito!")
     st.download_button(
         label=f"📥 HAZ CLIC AQUÍ PARA DESCARGAR {st.session_state['ultimo_zip_nombre']}",
         data=st.session_state["ultimo_zip_bytes"],

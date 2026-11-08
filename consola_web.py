@@ -158,7 +158,6 @@ def _formatear_bibliografia_apa(doc):
     en formato APA 7ª edición (sangría francesa de 1,27 cm / 0.5 pulgadas, alineación izquierda,
     orden alfabético estricto y títulos de obras en cursiva).
     """
-    # Eliminar bibliografía APA previa si se re-ejecuta sobre el mismo documento
     for p in list(doc.paragraphs):
         if not _es_linea_toc(p) and p.text.strip().startswith("Ilustre Municipalidad de Osorno. (2025)."):
             p._element.getparent().remove(p._element)
@@ -179,7 +178,6 @@ def _formatear_bibliografia_apa(doc):
             idx_tit = i
             break
 
-    # Si existe el título de referencias, limpiar los párrafos de viñetas/texto viejo hasta el siguiente título o Anexo
     if p_tit_ref is not None and idx_tit is not None:
         a_borrar = []
         for p_sig in doc.paragraphs[idx_tit + 1:]:
@@ -195,7 +193,6 @@ def _formatear_bibliografia_apa(doc):
         for p_old in a_borrar:
             p_old._element.getparent().remove(p_old._element)
     else:
-        # Si no encontró el subtítulo, ubicarlo justo antes del ANEXO 1
         p_anexo1 = None
         for p in doc.paragraphs:
             if not _es_linea_toc(p) and p.text.strip().upper().startswith("ANEXO 1"):
@@ -305,7 +302,6 @@ def _aplicar_plantilla_institucional_ulagos(ruta_word, ruta_plantilla):
         media_doc = os.path.join(dir_doc, "word", "media")
         os.makedirs(media_doc, exist_ok=True)
 
-        # Mapear relaciones de document.xml.rels de la plantilla para saber qué imagen es la portada
         tpl_rels_path = os.path.join(dir_tpl, "word", "_rels", "document.xml.rels")
         mapa_rid_tpl = {}
         if os.path.exists(tpl_rels_path):
@@ -329,7 +325,6 @@ def _aplicar_plantilla_institucional_ulagos(ruta_word, ruta_plantilla):
             draw_portada_xml = re.sub(r'r:embed="rId\d+"', 'r:embed="rIdULagosPortada"', raw_draw_1)
             draw_portada_xml = draw_portada_xml.replace('behindDoc="0"', 'behindDoc="1"')
 
-        # Copiar imágenes institucionales de la plantilla
         src_portada_img = os.path.join(media_tpl, img_portada_nombre)
         if os.path.exists(src_portada_img):
             shutil.copy2(src_portada_img, os.path.join(media_doc, "ulagos_portada.png"))
@@ -338,7 +333,6 @@ def _aplicar_plantilla_institucional_ulagos(ruta_word, ruta_plantilla):
             if os.path.exists(p_src):
                 shutil.copy2(p_src, os.path.join(media_doc, dest_name))
 
-        # Copiar headers y footers de la plantilla y actualizar sus .rels
         rels_dir = os.path.join(dir_doc, "word", "_rels")
         os.makedirs(rels_dir, exist_ok=True)
 
@@ -360,7 +354,6 @@ def _aplicar_plantilla_institucional_ulagos(ruta_word, ruta_plantilla):
                 with open(os.path.join(rels_dir, hf + ".rels"), "w", encoding="utf-8") as fw:
                     fw.write(txt_rel)
 
-        # Registrar relaciones en word/_rels/document.xml.rels
         doc_rels_path = os.path.join(rels_dir, "document.xml.rels")
         with open(doc_rels_path, "r", encoding="utf-8") as fr:
             rels_xml = fr.read()
@@ -379,12 +372,11 @@ def _aplicar_plantilla_institucional_ulagos(ruta_word, ruta_plantilla):
             with open(doc_rels_path, "w", encoding="utf-8") as fw:
                 fw.write(rels_xml)
 
-        # Asegurar Content_Types para header/footer y png
         ct_path = os.path.join(dir_doc, "[Content_Types].xml")
         with open(ct_path, "r", encoding="utf-8") as fr:
             ct_xml = fr.read()
         if 'Extension="png"' not in ct_xml:
-            ct_xml = ct_xml.replace("<Types ", '<Types ').replace("</Types>", '<Default Extension="png" ContentType="image/png"/></Types>')
+            ct_xml = ct_xml.replace("</Types>", '<Default Extension="png" ContentType="image/png"/></Types>')
         overrides_hf = (
             '<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>'
             '<Override PartName="/word/header2.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>'
@@ -398,7 +390,6 @@ def _aplicar_plantilla_institucional_ulagos(ruta_word, ruta_plantilla):
         with open(ct_path, "w", encoding="utf-8") as fw:
             fw.write(ct_xml)
 
-        # Inyectar el drawing de portada en el primer párrafo de document.xml y los headers en sectPr
         doc_xml_path = os.path.join(dir_doc, "word", "document.xml")
         with open(doc_xml_path, "r", encoding="utf-8") as fr:
             doc_xml = fr.read()
@@ -509,7 +500,7 @@ def _reemplazar_integrantes_en_parrafo(p):
         if len(lineas) <= 1:
             _reemplazar_texto_parrafo_conservando_formato(p, "INTEGRANTES:", size_pt=10.5, bold=True)
         else:
-             p_nuevo_txt = re.sub(
+            p_nuevo_txt = re.sub(
                 r"EQUIPO FORMULADOR\s*(\(INTEGRANTES\))?\s*:",
                 "INTEGRANTES:",
                 p.text,
@@ -557,7 +548,6 @@ def _limpiar_titulos_y_portada(doc):
         if not _es_linea_toc(p) and (txt.upper().startswith("ANEXO ") or re.match(r"^\d+\.", txt)):
             p.paragraph_format.keep_with_next = True
 
-    # Revisar también si la portada usa alguna tabla
     for tbl in doc.tables[:2]:
         for row in tbl.rows:
             for cell in row.cells:
@@ -1098,7 +1088,6 @@ def generar_entrega_completa_en_servidor(cfg_vivo, directorio_destino, aplicar_e
         except Exception:
             pass
 
-    # Sincronizar automáticamente la carpeta local del proyecto para que el Word local también quede actualizado
     carpeta_local_script = os.path.dirname(os.path.abspath(__file__))
     if os.path.abspath(directorio_destino) != os.path.abspath(carpeta_local_script):
         try:
@@ -1549,7 +1538,6 @@ if "ultimo_zip_bytes" in st.session_state:
 
 
 if __name__ == "__main__" and not os.environ.get("STREAMLIT_SERVER_PORT"):
-    # Si ejecutas `python consola_web.py` directo en consola, genera la carpeta local de inmediato
     cfg_cli = copy.deepcopy(mod2.DEFAULTS)
     cfg_cli["INVERSIONES_LISTA"] = copy.deepcopy(mod2.INVERSIONES_DEFAULT)
     cfg_cli["COSTOS_VAR_LISTA"] = copy.deepcopy(mod2.COSTOS_VAR_DEFAULT)

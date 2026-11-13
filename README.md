@@ -1,7 +1,7 @@
 #  Suite de Formulación y Evaluación de Proyectos 2026
 
 [![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://proyectos-2026-ubfvxgpqmpp5z7dn6wlnn3.streamlit.app/)
-[![Lanzar Suite en Streamlit](https://img.shields.io/badge/🚀_ABRIR_SUITE_INTERACTIVA_EN_STREAMLIT-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://proyectos-2026-ubfvxgpqmpp5z7dn6wlnn3.streamlit.app/)
+[![Lanzar Suite en Streamlit](https://img.shields.io/badge/_ABRIR_SUITE_INTERACTIVA_EN_STREAMLIT-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://proyectos-2026-ubfvxgpqmpp5z7dn6wlnn3.streamlit.app/)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://github.com/mauriciovargas1516-ux/PROYECTOS-2026)
 
  **Acceso directo a la consola web en vivo:**  
@@ -91,5 +91,7 @@ El sistema incluye preconfigurado el proyecto **"Carton Vivo Osorno"**, una inic
 
 1. Clonar el repositorio:
 ```bash
-git clone [https://github.com/mauriciovargas1516-ux/proyectos-2026.git](https://github.com/mauriciovargas1516-ux/proyectos-2026.git)
-cd proyectos-2026
+git clone https://github.com/mauriciovargas1516-ux/PROYECTOS-2026.git
+cd PROYECTOS-2026
+pip install -r requirements.txt
+streamlit run consola_web.py

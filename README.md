@@ -1,10 +1,11 @@
-# Suite de Formulacion y Evaluacion de Proyectos 2026
+#  Suite de Formulación y Evaluación de Proyectos 2026
 
-Plataforma web interactiva desarrollada en Python y Streamlit para la formulacion, simulacion financiera, evaluacion socioeconomica y generacion automatizada de entregables ejecutivos de proyectos de inversion privada, publica y de economia circular.
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://proyectos-2026-ubfvxgpqmpp5z7dn6wlnn3.streamlit.app/)
+[![Lanzar Suite en Streamlit](https://img.shields.io/badge/🚀_ABRIR_SUITE_INTERACTIVA_EN_STREAMLIT-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://proyectos-2026-ubfvxgpqmpp5z7dn6wlnn3.streamlit.app/)
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://github.com/mauriciovargas1516-ux/PROYECTOS-2026)
 
-Desarrollada en el marco de la asignatura de Formulacion y Evaluacion Integrada de Proyectos de la carrera de Ingenieria Comercial en la Universidad de Los Lagos, Campus Osorno.
-
----
+ **Acceso directo a la consola web en vivo:**  
+**[https://proyectos-2026-ubfvxgpqmpp5z7dn6wlnn3.streamlit.app/](https://proyectos-2026-ubfvxgpqmpp5z7dn6wlnn3.streamlit.app/)**
 
 ## 1. Propósito del Sistema
 

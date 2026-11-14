@@ -7,7 +7,7 @@
 Plataforma interactiva de ingeniería económica y automatización documental desarrollada en **Python (`Streamlit`, `python-docx`, `openpyxl`, `numpy-financial`, `matplotlib`)** para la formulación, evaluación financiera privada y evaluación social de proyectos bajo metodología del **Sistema Nacional de Inversiones (SNI / MIDESO 2026)**, aplicada al proyecto de economía circular **"Cartón Vivo Osorno"** (Ingeniería Comercial, Universidad de Los Lagos — Docente: Dra. Luz María Ferrada B.).
 
 **Acceso directo a la consola interactiva en vivo:**  
-[https://proyectos-2026-ubfvxgpqmpp5z7dn6wlnn3.streamlit.app/](https://proyectos-2026-ubfvxgpqmpp5z7dn6wlnn3.streamlit.app/)
+https://proyectos-2026-ubfvxgpqmpp5z7dn6wlnn3.streamlit.app/
 
 ---
 
@@ -35,7 +35,7 @@ Plataforma interactiva de ingeniería económica y automatización documental de
 
 | Archivo / Script | Rol en la Arquitectura del Sistema |
 | :--- | :--- |
-| **`0_consola_maestra_total.py` / `consola_web.py`** | Aplicación web en Streamlit con interfaz en modo claro fijo, tablas editables con botones dinámicos (`➕ Agregar` / `🗑️ Quitar`), recalculo instantáneo de VAN/TIR Privado y Social y empaquetador `.zip` en servidor. |
+| **`0_consola_maestra_total.py` / `consola_web.py`** | Aplicación web en Streamlit con interfaz en modo claro fijo, tablas editables con botones dinámicos (`➕ Agregar` / `🗑️ Quitar`), recálculo instantáneo de VAN/TIR Privado y Social y empaquetador `.zip` en servidor. |
 | **`1_simulador_interactivo_cartonvivo.py`** | Simulador de escritorio (`Tkinter` + `Matplotlib`) y motor base de evaluación privada y social a 10 años, cálculo de depreciaciones, valor residual, capital de trabajo por período de desfase (45 días) y liberación de recursos municipales (Vertedero de Curaco). |
 | **`2_corrector_formato_y_excels.py`** | Generador automatizado de los **3 Libros Excel oficiales** (`Anexo_1_Flujos_Financieros.xlsx`, `Anexo_2_Informantes_y_Catastro.xlsx`, `Anexo_3_Proyecciones_y_Sensibilidad.xlsx`) y constructor del informe maestro en Word sobre la plantilla institucional de la Universidad de Los Lagos. |
 | **`3_integrador_arboles_y_pauta_josue.py`** | Motor de inyección gráfica y estructural: inserta los diagramas de ingeniería (Árbol de Problemas, Árbol de Objetivos, Balance de Masa 70%/30%, Layout de Galpón en Ovejería y Flujo de Proceso), la Matriz de Marco Lógico (MML), el Business Model Canvas y compila el archivo `.pdf` y `.zip` final. |
@@ -45,7 +45,7 @@ Plataforma interactiva de ingeniería económica y automatización documental de
 ## Instalación y Ejecución Local
 
 ```bash
-git clone https://github.com/mauriciovargas1516-ux/PROYECTOS-2026.git
+git clone [https://github.com/mauriciovargas1516-ux/PROYECTOS-2026.git](https://github.com/mauriciovargas1516-ux/PROYECTOS-2026.git)
 cd PROYECTOS-2026
 pip install -r requirements.txt
 streamlit run 0_consola_maestra_total.py
